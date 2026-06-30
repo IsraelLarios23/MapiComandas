@@ -69,13 +69,31 @@ class CobroViewModel @Inject constructor(
     }
 
     fun agregarPago(formaPago: FormaPago, importe: Double) {
+        if (importe <= 0.0) return
         val pagos = _uiState.value.pagos.toMutableList()
         val existente = pagos.indexOfFirst { it.idFormaPago == formaPago.idFormaPago }
         if (existente >= 0) {
+            // Combina con el pago existente de la misma forma
             pagos[existente] = pagos[existente].copy(importe = pagos[existente].importe + importe)
         } else {
             pagos.add(PagoVenta(formaPago.idFormaPago, formaPago.nombre, importe))
         }
+        recalcularPagos(pagos)
+    }
+
+    fun editarPago(idFormaPago: Int, nuevoMonto: Double) {
+        val pagos = _uiState.value.pagos.toMutableList()
+        val idx = pagos.indexOfFirst { it.idFormaPago == idFormaPago }
+        if (idx < 0) return
+        if (nuevoMonto <= 0.0) {
+            pagos.removeAt(idx)
+        } else {
+            pagos[idx] = pagos[idx].copy(importe = nuevoMonto)
+        }
+        recalcularPagos(pagos)
+    }
+
+    private fun recalcularPagos(pagos: MutableList<PagoVenta>) {
         val totalPagado = pagos.sumOf { it.importe }
         val total = (_uiState.value.comanda?.total ?: 0.0) + _uiState.value.propinaIngresada
         _uiState.value = _uiState.value.copy(

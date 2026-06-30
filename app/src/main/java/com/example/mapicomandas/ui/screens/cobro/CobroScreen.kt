@@ -1,5 +1,6 @@
 package com.example.mapicomandas.ui.screens.cobro
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -167,26 +168,56 @@ fun CobroScreen(
                 Text("Formas de Pago", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Spacer(Modifier.height(8.dp))
 
-                // Pagos aplicados
+                // Pagos aplicados (editables)
+                var pagoEnEdicion by remember { mutableStateOf<PagoVenta?>(null) }
                 if (uiState.pagos.isNotEmpty()) {
                     uiState.pagos.forEach { pago ->
                         FilaPago(
                             pago = pago,
+                            onEditar = { pagoEnEdicion = pago },
                             onQuitar = { viewModel.quitarPago(pago.idFormaPago) }
                         )
                     }
                     Divider(modifier = Modifier.padding(vertical = 8.dp))
                 }
 
+                // Diálogo para editar el monto de un pago ya aplicado
+                pagoEnEdicion?.let { pago ->
+                    val totalObjetivo = (uiState.comanda?.total ?: 0.0) + uiState.propinaIngresada
+                    val otrosPagos = uiState.totalPagado - pago.importe
+                    DialogoMontoPago(
+                        forma = FormaPago(pago.idFormaPago, pago.nombreFormaPago, true, false),
+                        montoSugerido = pago.importe,
+                        montoMaximo = maxOf(0.0, totalObjetivo - otrosPagos),
+                        titulo = "Editar ${pago.nombreFormaPago}",
+                        onConfirmar = { monto ->
+                            viewModel.editarPago(pago.idFormaPago, monto)
+                            pagoEnEdicion = null
+                        },
+                        onDismiss = { pagoEnEdicion = null }
+                    )
+                }
+
                 // Botones de forma de pago
-                val importeRestante = maxOf(
-                    0.0,
-                    (uiState.comanda?.total ?: 0.0) + uiState.propinaIngresada - uiState.totalPagado
-                )
+                val totalAPagar = (uiState.comanda?.total ?: 0.0) + uiState.propinaIngresada
+                val importeRestante = maxOf(0.0, totalAPagar - uiState.totalPagado)
+                val montoCompleto = importeRestante <= 0.0
+
+                var formaSeleccionada by remember { mutableStateOf<FormaPago?>(null) }
+
+                if (montoCompleto) {
+                    Text(
+                        "Monto completo ✓",
+                        color = Color(0xFF4CAF50),
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                }
 
                 uiState.formasPago.forEach { forma ->
                     Button(
-                        onClick = { viewModel.agregarPago(forma, importeRestante) },
+                        onClick = { formaSeleccionada = forma },
+                        enabled = !montoCompleto,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 3.dp),
@@ -202,6 +233,20 @@ fun CobroScreen(
                         Spacer(Modifier.width(8.dp))
                         Text(forma.nombre)
                     }
+                }
+
+                // Diálogo para capturar el monto de la forma de pago seleccionada
+                formaSeleccionada?.let { forma ->
+                    DialogoMontoPago(
+                        forma = forma,
+                        montoSugerido = importeRestante,
+                        montoMaximo = importeRestante,
+                        onConfirmar = { monto ->
+                            viewModel.agregarPago(forma, monto)
+                            formaSeleccionada = null
+                        },
+                        onDismiss = { formaSeleccionada = null }
+                    )
                 }
 
                 Spacer(Modifier.weight(1f))
@@ -246,10 +291,11 @@ fun FilaTotal(
 }
 
 @Composable
-fun FilaPago(pago: PagoVenta, onQuitar: () -> Unit) {
+fun FilaPago(pago: PagoVenta, onEditar: () -> Unit, onQuitar: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onEditar)
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -257,9 +303,75 @@ fun FilaPago(pago: PagoVenta, onQuitar: () -> Unit) {
         Text(pago.nombreFormaPago, fontWeight = FontWeight.Medium)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("$${String.format("%.2f", pago.importe)}", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
+            IconButton(onClick = onEditar, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.Edit, null, tint = Color(0xFF2196F3), modifier = Modifier.size(16.dp))
+            }
             IconButton(onClick = onQuitar, modifier = Modifier.size(32.dp)) {
                 Icon(Icons.Default.Close, null, tint = Color.Red, modifier = Modifier.size(16.dp))
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DialogoMontoPago(
+    forma: FormaPago,
+    montoSugerido: Double,
+    montoMaximo: Double,
+    titulo: String? = null,
+    onConfirmar: (Double) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var monto by remember { mutableStateOf(String.format("%.2f", montoSugerido)) }
+    val montoValido = monto.toDoubleOrNull()?.let { it > 0.0 && it <= montoMaximo + 0.001 } ?: false
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(titulo ?: forma.nombre) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Pendiente: $${String.format("%.2f", montoMaximo)}",
+                    color = Color.Gray, fontSize = 13.sp
+                )
+                OutlinedTextField(
+                    value = monto,
+                    onValueChange = { v -> monto = v.filter { it.isDigit() || it == '.' } },
+                    label = { Text("Monto a pagar") },
+                    prefix = { Text("$") },
+                    singleLine = true,
+                    isError = monto.isNotBlank() && !montoValido,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                // Atajos rápidos
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AssistChip(
+                        onClick = { monto = String.format("%.2f", montoMaximo) },
+                        label = { Text("Total pendiente") }
+                    )
+                    AssistChip(
+                        onClick = { monto = String.format("%.2f", montoMaximo / 2) },
+                        label = { Text("Mitad") }
+                    )
+                }
+                if (monto.isNotBlank() && !montoValido) {
+                    Text(
+                        "El monto debe ser mayor a 0 y no exceder lo pendiente.",
+                        color = MaterialTheme.colorScheme.error, fontSize = 12.sp
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { monto.toDoubleOrNull()?.let { onConfirmar(it) } },
+                enabled = montoValido
+            ) { Text("Aceptar") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
 }
