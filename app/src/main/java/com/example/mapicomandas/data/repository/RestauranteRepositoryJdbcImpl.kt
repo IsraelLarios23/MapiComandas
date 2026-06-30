@@ -615,13 +615,29 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
     // ─────────────────────────────────────────────────────────────────────────
 
     override suspend fun obtenerArticulos(idCategoria: Int?, clave: String?, nombre: String?): List<Articulo> {
+        // Precio resuelto desde dbo.Precios: prioriza la lista de la CAJA (AsignacionListaCaja),
+        // luego cualquier precio activo del artículo, y por último Articulos.PrecioVenta.
+        val precioExpr = """
+            COALESCE(
+              (SELECT TOP 1 p.Precio FROM dbo.Precios p
+                 INNER JOIN dbo.AsignacionListaCaja al ON al.IdListaPrecio = p.ListaPrecioId
+                 WHERE p.ArticuloId = a.IdArticulo AND ISNULL(p.Activo,1)=1
+                   AND al.IdCaja = ? AND ISNULL(al.Activo,1)=1 AND p.CantidadMinima <= 1
+                 ORDER BY p.CantidadMinima DESC),
+              (SELECT TOP 1 p.Precio FROM dbo.Precios p
+                 WHERE p.ArticuloId = a.IdArticulo AND ISNULL(p.Activo,1)=1 AND p.CantidadMinima <= 1
+                 ORDER BY ISNULL(p.ListaPrecioId,0), p.CantidadMinima DESC),
+              a.PrecioVenta, 0
+            ) AS PrecioResuelto
+        """.trimIndent()
+
         val where = mutableListOf("ISNULL(a.Activo,1)=1")
-        val params = mutableListOf<Any?>()
+        val params = mutableListOf<Any?>(session.idCaja)   // para el subquery de la lista de caja
         if (idCategoria != null) { where.add("a.IdCategoria=?"); params.add(idCategoria) }
         if (clave != null) { where.add("(a.Clave=? OR a.CodigoBarras=?)"); params.addAll(listOf(clave, clave)) }
         if (nombre != null) { where.add("a.Nombre LIKE ?"); params.add("%$nombre%") }
         val sql = """
-            SELECT a.*
+            SELECT a.*, $precioExpr
             FROM dbo.Articulos a
             WHERE ${where.joinToString(" AND ")}
             ORDER BY a.Nombre
@@ -1016,7 +1032,7 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         idArticulo = getInt("IdArticulo"),
         clave = optString("Clave") ?: "",
         nombre = getString("Nombre"),
-        precioVenta = optDouble("PrecioVenta"),
+        precioVenta = if (hasCol("PrecioResuelto")) getDouble("PrecioResuelto") else optDouble("PrecioVenta"),
         costo = optDouble("Costo"),
         idCategoria = optInt("IdCategoria") ?: 0,
         codigoBarras = optString("CodigoBarras"),
