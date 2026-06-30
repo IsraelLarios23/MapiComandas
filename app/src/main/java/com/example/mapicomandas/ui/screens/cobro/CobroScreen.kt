@@ -2,6 +2,8 @@ package com.example.mapicomandas.ui.screens.cobro
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -184,27 +186,69 @@ fun CobroScreen(
                 Text("Formas de Pago", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Spacer(Modifier.height(8.dp))
 
-                // Pagos aplicados (editables)
                 var pagoEnEdicion by remember { mutableStateOf<PagoVenta?>(null) }
-                if (uiState.pagos.isNotEmpty()) {
-                    uiState.pagos.forEach { pago ->
-                        FilaPago(
-                            pago = pago,
-                            onEditar = { pagoEnEdicion = pago },
-                            onQuitar = { viewModel.quitarPago(pago.idFormaPago) }
+                var formaSeleccionada by remember { mutableStateOf<FormaPago?>(null) }
+
+                val totalAPagar = (uiState.comanda?.total ?: 0.0) + uiState.propinaIngresada
+                val importeRestante = maxOf(0.0, totalAPagar - uiState.totalPagado)
+                val montoCompleto = importeRestante <= 0.0
+
+                // Contenido scrolleable: pagos aplicados + botones de forma de pago
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (uiState.pagos.isNotEmpty()) {
+                        uiState.pagos.forEach { pago ->
+                            FilaPago(
+                                pago = pago,
+                                onEditar = { pagoEnEdicion = pago },
+                                onQuitar = { viewModel.quitarPago(pago.idFormaPago) }
+                            )
+                        }
+                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    }
+
+                    if (montoCompleto) {
+                        Text(
+                            "Monto completo ✓",
+                            color = Color(0xFF4CAF50),
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(vertical = 8.dp)
                         )
                     }
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    uiState.formasPago.forEach { forma ->
+                        Button(
+                            onClick = { formaSeleccionada = forma },
+                            enabled = !montoCompleto,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (forma.esEfectivo) Color(0xFF4CAF50) else Color(0xFF2196F3)
+                            )
+                        ) {
+                            Icon(
+                                if (forma.esEfectivo) Icons.Default.AttachMoney else Icons.Default.CreditCard,
+                                null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(forma.nombre)
+                        }
+                    }
                 }
 
                 // Diálogo para editar el monto de un pago ya aplicado
                 pagoEnEdicion?.let { pago ->
-                    val totalObjetivo = (uiState.comanda?.total ?: 0.0) + uiState.propinaIngresada
                     val otrosPagos = uiState.totalPagado - pago.importe
                     DialogoMontoPago(
                         forma = FormaPago(pago.idFormaPago, pago.nombreFormaPago, true, false),
                         montoSugerido = pago.importe,
-                        montoMaximo = maxOf(0.0, totalObjetivo - otrosPagos),
+                        montoMaximo = maxOf(0.0, totalAPagar - otrosPagos),
                         titulo = "Editar ${pago.nombreFormaPago}",
                         onConfirmar = { monto ->
                             viewModel.editarPago(pago.idFormaPago, monto)
@@ -212,43 +256,6 @@ fun CobroScreen(
                         },
                         onDismiss = { pagoEnEdicion = null }
                     )
-                }
-
-                // Botones de forma de pago
-                val totalAPagar = (uiState.comanda?.total ?: 0.0) + uiState.propinaIngresada
-                val importeRestante = maxOf(0.0, totalAPagar - uiState.totalPagado)
-                val montoCompleto = importeRestante <= 0.0
-
-                var formaSeleccionada by remember { mutableStateOf<FormaPago?>(null) }
-
-                if (montoCompleto) {
-                    Text(
-                        "Monto completo ✓",
-                        color = Color(0xFF4CAF50),
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                }
-
-                uiState.formasPago.forEach { forma ->
-                    Button(
-                        onClick = { formaSeleccionada = forma },
-                        enabled = !montoCompleto,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 3.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (forma.esEfectivo) Color(0xFF4CAF50) else Color(0xFF2196F3)
-                        )
-                    ) {
-                        Icon(
-                            if (forma.esEfectivo) Icons.Default.AttachMoney else Icons.Default.CreditCard,
-                            null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(forma.nombre)
-                    }
                 }
 
                 // Diálogo para capturar el monto de la forma de pago seleccionada
@@ -265,15 +272,15 @@ fun CobroScreen(
                     )
                 }
 
-                Spacer(Modifier.weight(1f))
-
-                // Botón cobrar
-                val puedeCobrar = uiState.totalPagado >= (uiState.comanda?.total ?: 0.0) + uiState.propinaIngresada
+                // Botón COBRAR fijo, siempre visible al fondo
+                val puedeCobrar = uiState.totalPagado >= totalAPagar
                 Button(
                     onClick = { viewModel.cobrar() },
                     enabled = puedeCobrar && !uiState.cargando,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(top = 6.dp)
                         .height(56.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                 ) {
