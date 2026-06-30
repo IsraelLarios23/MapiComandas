@@ -1,6 +1,5 @@
 package com.example.mapicomandas.data.model
 
-import kotlinx.serialization.Serializable
 import java.math.BigDecimal
 
 // ─── Enums de status ──────────────────────────────────────────────────────────
@@ -51,7 +50,6 @@ object TipoModificador {
 
 // ─── Mesas ────────────────────────────────────────────────────────────────────
 
-@Serializable
 data class Mesa(
     val idMesa: Int,
     val numero: String,
@@ -68,7 +66,6 @@ data class Mesa(
     val activa: Boolean
 )
 
-@Serializable
 data class MesaUi(
     val idMesa: Int,
     val numero: String,
@@ -91,7 +88,6 @@ data class MesaUi(
 
 // ─── Meseros ──────────────────────────────────────────────────────────────────
 
-@Serializable
 data class Mesero(
     val idMesero: Int,
     val nombre: String,
@@ -102,7 +98,6 @@ data class Mesero(
 
 // ─── Artículos ────────────────────────────────────────────────────────────────
 
-@Serializable
 data class Articulo(
     val idArticulo: Int,
     val clave: String,
@@ -126,7 +121,6 @@ data class Articulo(
     val imagenBase64: String? = null
 )
 
-@Serializable
 data class Categoria(
     val idCategoria: Int,
     val nombre: String,
@@ -137,7 +131,6 @@ data class Categoria(
 
 // ─── Comandas ─────────────────────────────────────────────────────────────────
 
-@Serializable
 data class MaestroComanda(
     val idComanda: Int,
     val folio: String,
@@ -165,7 +158,6 @@ data class MaestroComanda(
     val statusEntrega: Int
 )
 
-@Serializable
 data class LineaComanda(
     val idDetalleComanda: Int,
     val idComanda: Int,
@@ -192,7 +184,6 @@ data class LineaComanda(
 
 // ─── Modificadores ────────────────────────────────────────────────────────────
 
-@Serializable
 data class Modificador(
     val idModificador: Int,
     val nombre: String,
@@ -203,7 +194,6 @@ data class Modificador(
     val precioExtra: Double
 )
 
-@Serializable
 data class ModificadorAplicado(
     val idModificador: Int,
     val tipo: Int,
@@ -216,7 +206,6 @@ data class ModificadorAplicado(
 
 // ─── Kits ─────────────────────────────────────────────────────────────────────
 
-@Serializable
 data class KitSlot(
     val idKitSlot: Int,
     val idArticuloPadre: Int,
@@ -225,7 +214,6 @@ data class KitSlot(
     val opciones: List<Articulo> = emptyList()
 )
 
-@Serializable
 data class ComponenteKit(
     val idKitSlot: Int,
     val idArticulo: Int,
@@ -236,7 +224,6 @@ data class ComponenteKit(
 
 // ─── KDS ──────────────────────────────────────────────────────────────────────
 
-@Serializable
 data class PlatilloKds(
     val idDetalleComanda: Int,
     val idComanda: Int,
@@ -262,7 +249,6 @@ data class GrupoKds(
 
 // ─── Puntos de impresión ──────────────────────────────────────────────────────
 
-@Serializable
 data class PuntoImpresion(
     val idPuntoImpresion: Int,
     val nombre: String,
@@ -276,7 +262,6 @@ data class PuntoImpresion(
 
 // ─── Domicilio ────────────────────────────────────────────────────────────────
 
-@Serializable
 data class Repartidor(
     val idRepartidor: Int,
     val nombre: String,
@@ -284,7 +269,6 @@ data class Repartidor(
     val activo: Boolean
 )
 
-@Serializable
 data class ZonaReparto(
     val idZonaReparto: Int,
     val nombre: String,
@@ -292,7 +276,6 @@ data class ZonaReparto(
     val activo: Boolean
 )
 
-@Serializable
 data class ComandaSinMesa(
     val idComanda: Int,
     val folio: String,
@@ -313,7 +296,6 @@ data class ComandaSinMesa(
 
 // ─── Pagos ────────────────────────────────────────────────────────────────────
 
-@Serializable
 data class PagoVenta(
     val idFormaPago: Int,
     val nombreFormaPago: String,
@@ -321,7 +303,6 @@ data class PagoVenta(
     val referencia: String = ""
 )
 
-@Serializable
 data class FormaPago(
     val idFormaPago: Int,
     val nombre: String,
@@ -331,7 +312,6 @@ data class FormaPago(
 
 // ─── Requests / Responses ─────────────────────────────────────────────────────
 
-@Serializable
 data class AbrirComandaRequest(
     val idMesa: Int?,
     val idMesero: Int,
@@ -348,7 +328,6 @@ data class AbrirComandaRequest(
     val cargoEntrega: Double = 0.0
 )
 
-@Serializable
 data class AgregarArticuloRequest(
     val idComanda: Int,
     val idArticulo: Int,
@@ -361,7 +340,6 @@ data class AgregarArticuloRequest(
     val componentesKit: List<ComponenteKit>? = null
 )
 
-@Serializable
 data class CerrarComandaRequest(
     val idComanda: Int,
     val idFormaPago: Int,
@@ -375,15 +353,12 @@ data class CerrarComandaRequest(
     val pagos: List<PagoVenta>? = null
 )
 
-@Serializable
 data class IdResponse(val id: Int)
 
-@Serializable
 data class MessageResponse(val mensaje: String)
 
 // ─── Configuración ────────────────────────────────────────────────────────────
 
-@Serializable
 data class ConfigEntry(
     val clave: String,
     val valor: String
@@ -391,7 +366,6 @@ data class ConfigEntry(
 
 // ─── Caja ────────────────────────────────────────────────────────────────────
 
-@Serializable
 data class MovimientoCaja(
     val tipo: String,
     val concepto: String,
@@ -400,7 +374,6 @@ data class MovimientoCaja(
     val idUsuario: Int
 )
 
-@Serializable
 data class ResumenCaja(
     val totalVentas: Double,
     val totalEfectivo: Double,
