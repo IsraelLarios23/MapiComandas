@@ -2,8 +2,9 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.kapt)   // para Hilt
     alias(libs.plugins.hilt)
-    alias(libs.plugins.ksp)
+    alias(libs.plugins.ksp)           // solo para Room
 }
 
 android {
@@ -17,8 +18,6 @@ android {
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        // El driver JDBC de MS incluye clases duplicadas con android.jar; excluirlas
         multiDexEnabled = true
     }
 
@@ -54,6 +53,10 @@ android {
     buildFeatures {
         compose = true
     }
+    // kapt: necesario para que Hilt procese correctamente con Java 11
+    kapt {
+        correctErrorTypes = true
+    }
 }
 
 dependencies {
@@ -68,18 +71,23 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
-    // Hilt
+
+    // Hilt — compilador con kapt (estable, sin conflicto de KSP shaded)
     implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
+    kapt(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
-    // Microsoft JDBC Driver para SQL Server
+
+    // Microsoft JDBC Driver para SQL Server (jre8 = compatible Android)
     implementation(libs.mssql.jdbc)
-    // Room (caché offline opcional)
+
+    // Room — compilador con ksp
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
-    // Security (EncryptedSharedPreferences para credenciales)
+
+    // Security (EncryptedSharedPreferences para credenciales JDBC)
     implementation(libs.androidx.security.crypto)
+
     // Coil
     implementation(libs.coil.compose)
 
