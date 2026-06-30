@@ -18,11 +18,13 @@ class JdbcDataSource @Inject constructor(
 
     private fun buildUrl(): String {
         val cfg = session.dbConfig
+        // encrypt=false evita el handshake TLS que falla en Android con mssql-jdbc
+        // (AssertionError numMsgsRcvd/numMsgsSent). Para LAN/on-premise es lo correcto.
         return "jdbc:sqlserver://${cfg.host}:${cfg.puerto};" +
                 "databaseName=${cfg.baseDatos};" +
                 "user=${cfg.usuario};" +
                 "password=${cfg.password};" +
-                "encrypt=true;" +
+                "encrypt=false;" +
                 "trustServerCertificate=true;" +
                 "loginTimeout=30;"
     }
