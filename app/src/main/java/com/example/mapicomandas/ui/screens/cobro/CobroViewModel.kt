@@ -98,32 +98,44 @@ class CobroViewModel @Inject constructor(
         recalcularPagos(pagos)
     }
 
+    private var netPayJob: kotlinx.coroutines.Job? = null
+
     /** Cobra el [monto] con la terminal NetPay; al aprobar, registra el pago. */
     fun cobrarConNetPay(formaPago: FormaPago, monto: Double) {
         if (monto <= 0.0) return
-        viewModelScope.launch {
+        netPayJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 procesandoNetPay = true,
-                mensajeNetPay = "Esperando terminal… presione la tarjeta"
+                mensajeNetPay = "Iniciando…"
             )
             val folio = _uiState.value.comanda?.folio
-            val res = runCatching { netPayService.cobrar(monto, folio) }.getOrElse {
-                com.example.mapicomandas.data.netpay.NetPayResultado(false, "ERROR", "", mensaje = it.message)
+            val res = try {
+                netPayService.cobrar(monto, folio) { msg ->
+                    _uiState.value = _uiState.value.copy(mensajeNetPay = msg)
+                }
+            } catch (c: kotlinx.coroutines.CancellationException) {
+                com.example.mapicomandas.data.netpay.NetPayResultado(false, "CANCELADA", "", mensaje = "Cobro cancelado")
+            } catch (e: Throwable) {
+                com.example.mapicomandas.data.netpay.NetPayResultado(false, "ERROR", "", mensaje = e.message)
             }
+
             if (res.aprobada) {
+                val tarjeta = listOfNotNull(res.marca, res.ultimos4?.let { "****$it" })
+                    .joinToString(" ").ifBlank { "" }
+                val ref = res.authCode ?: res.orderId ?: ""
                 val pagos = _uiState.value.pagos.toMutableList()
                 pagos.add(
                     PagoVenta(
                         idFormaPago = formaPago.idFormaPago,
-                        nombreFormaPago = formaPago.nombre,
+                        nombreFormaPago = formaPago.nombre + if (tarjeta.isNotBlank()) " ($tarjeta)" else "",
                         importe = monto,
-                        referencia = res.authCode ?: res.orderId ?: ""
+                        referencia = ref
                     )
                 )
                 recalcularPagos(pagos)
                 _uiState.value = _uiState.value.copy(
                     procesandoNetPay = false,
-                    mensajeNetPay = "Pago aprobado (auth ${res.authCode ?: "-"})"
+                    mensajeNetPay = "Pago aprobado · auth ${res.authCode ?: "-"} $tarjeta".trim()
                 )
             } else {
                 _uiState.value = _uiState.value.copy(
@@ -132,6 +144,14 @@ class CobroViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    fun cancelarNetPay() {
+        netPayJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            procesandoNetPay = false,
+            mensajeNetPay = "Cobro con terminal cancelado"
+        )
     }
 
     fun limpiarMensajeNetPay() {

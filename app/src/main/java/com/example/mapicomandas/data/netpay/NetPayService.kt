@@ -4,6 +4,7 @@ import com.example.mapicomandas.data.ConfigService
 import com.example.mapicomandas.data.db.JdbcDataSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -64,12 +65,21 @@ class NetPayService @Inject constructor(
         }
     }
 
-    /** Cobra [monto] con la terminal. Bloquea hasta resultado o timeout. */
-    suspend fun cobrar(monto: Double, folioNumber: String? = null): NetPayResultado {
+    /**
+     * Cobra [monto] con la terminal. Bloquea hasta resultado/timeout.
+     * [onProgreso] recibe mensajes de estado. Se cancela cancelando la corrutina.
+     */
+    suspend fun cobrar(
+        monto: Double,
+        folioNumber: String? = null,
+        msi: Int? = null,
+        onProgreso: (String) -> Unit = {}
+    ): NetPayResultado {
         val cfg = obtenerConfig()
         if (!cfg.estaConfigurado)
-            return NetPayResultado(false, "ERROR", "", mensaje = "NetPay no está configurado (ConfiguracionSistema).")
+            return NetPayResultado(false, "ERROR", "", mensaje = "NetPay no está configurado (Settings → Terminal NetPay).")
 
+        onProgreso("Preparando transacción…")
         asegurarTabla()
         val mapiTxnId = java.util.UUID.randomUUID().toString()
 
@@ -82,25 +92,28 @@ class NetPayService @Inject constructor(
         }.onFailure { return NetPayResultado(false, "ERROR", mapiTxnId, mensaje = "No se pudo registrar la transacción: ${it.message}") }
 
         // 2. OAuth + 3. Sale
+        onProgreso("Despachando a la terminal…")
         val despacho = withContext(Dispatchers.IO) {
             runCatching {
                 val token = solicitarToken(cfg)
-                despacharVenta(cfg, token, monto, mapiTxnId, folioNumber)
+                despacharVenta(cfg, token, monto, mapiTxnId, folioNumber, msi)
             }
         }
         if (despacho.isFailure)
             return NetPayResultado(false, "ERROR", mapiTxnId, mensaje = "Error al despachar a la terminal: ${despacho.exceptionOrNull()?.message}")
 
-        // 4. Polling sobre PagosNetPay
+        // 4. Polling sobre PagosNetPay (cancelable)
+        onProgreso("Esperando terminal… presione la tarjeta")
         return esperarResultado(cfg, mapiTxnId)
     }
 
     private suspend fun esperarResultado(cfg: NetPayConfig, mapiTxnId: String): NetPayResultado {
         val deadline = System.currentTimeMillis() + cfg.pollTimeoutSeconds * 1000L
         while (System.currentTimeMillis() < deadline) {
+            kotlin.coroutines.coroutineContext.ensureActive()   // permite cancelar
             val fila = runCatching {
                 db.queryOne(
-                    """SELECT Estatus, AuthCode, OrderId, MontoCobrado, Mensaje
+                    """SELECT Estatus, ResponseCode, AuthCode, OrderId, Marca, Ultimos4, TipoTarjeta, MontoCobrado, Mensaje
                        FROM dbo.PagosNetPay WHERE MapiTxnId=?""",
                     listOf(mapiTxnId)
                 ) { rs ->
@@ -108,8 +121,12 @@ class NetPayService @Inject constructor(
                         aprobada = rs.getString("Estatus").equals("APROBADA", true),
                         estatus = rs.getString("Estatus") ?: "PENDIENTE",
                         mapiTxnId = mapiTxnId,
+                        responseCode = rs.getString("ResponseCode"),
                         authCode = rs.getString("AuthCode"),
                         orderId = rs.getString("OrderId"),
+                        marca = rs.getString("Marca"),
+                        ultimos4 = rs.getString("Ultimos4"),
+                        tipoTarjeta = rs.getString("TipoTarjeta"),
                         montoCobrado = rs.getString("MontoCobrado"),
                         mensaje = rs.getString("Mensaje")
                     )
@@ -121,6 +138,28 @@ class NetPayService @Inject constructor(
         }
         return NetPayResultado(false, "TIMEOUT", mapiTxnId,
             mensaje = "La terminal no respondió en ${cfg.pollTimeoutSeconds}s.")
+    }
+
+    /** Cancela una venta del mismo día (orderId del resultado). */
+    suspend fun cancelar(orderId: String): Boolean = withContext(Dispatchers.IO) {
+        val cfg = obtenerConfig()
+        if (!cfg.estaConfigurado || orderId.isBlank()) return@withContext false
+        runCatching {
+            val token = solicitarToken(cfg)
+            val url = URL(cfg.baseUrl.trimEnd('/') + config.texto("NetPayCancelPath", "/gateway/integration-service/transactions/cancel"))
+            val body = JSONObject().apply {
+                put("serialNumber", cfg.serialNumber)
+                put("orderId", orderId)
+                put("storeId", cfg.storeId)
+            }.toString()
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"; connectTimeout = 30_000; readTimeout = 30_000
+                setRequestProperty("Authorization", "Bearer $token")
+                setRequestProperty("Content-Type", "application/json"); doOutput = true
+            }
+            conn.outputStream.use { it.write(body.toByteArray()) }
+            leerRespuesta(conn)
+        }.isSuccess
     }
 
     // ── HTTP ──────────────────────────────────────────────────────────────────
@@ -146,7 +185,7 @@ class NetPayService @Inject constructor(
     }
 
     private fun despacharVenta(
-        cfg: NetPayConfig, token: String, monto: Double, mapiTxnId: String, folioNumber: String?
+        cfg: NetPayConfig, token: String, monto: Double, mapiTxnId: String, folioNumber: String?, msi: Int?
     ) {
         val url = URL(cfg.baseUrl.trimEnd('/') + cfg.salePath)
         val body = JSONObject().apply {
@@ -155,6 +194,7 @@ class NetPayService @Inject constructor(
             put("storeId", cfg.storeId)
             put("traceability", JSONObject().put("mapiTxnId", mapiTxnId))
             if (!folioNumber.isNullOrBlank()) put("folioNumber", folioNumber)
+            if (msi != null && msi > 0) put("msi", msi)
         }.toString()
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"

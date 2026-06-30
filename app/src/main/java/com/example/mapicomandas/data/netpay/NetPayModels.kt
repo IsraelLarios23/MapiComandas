@@ -21,10 +21,14 @@ data class NetPayConfig(
 /** Resultado del cobro con terminal NetPay. */
 data class NetPayResultado(
     val aprobada: Boolean,
-    val estatus: String,            // PENDIENTE / APROBADA / RECHAZADA / TIMEOUT / ERROR
+    val estatus: String,            // PENDIENTE / APROBADA / RECHAZADA / TIMEOUT / ERROR / CANCELADA
     val mapiTxnId: String,
+    val responseCode: String? = null,
     val authCode: String? = null,
     val orderId: String? = null,
+    val marca: String? = null,       // marca de la tarjeta (VISA, MC…)
+    val ultimos4: String? = null,
+    val tipoTarjeta: String? = null, // CR / DB
     val montoCobrado: String? = null,
     val mensaje: String? = null
 )

@@ -55,7 +55,7 @@ fun CobroScreen(
         }
     }
 
-    // Diálogo de espera de la terminal NetPay
+    // Diálogo de espera de la terminal NetPay (cancelable)
     if (uiState.procesandoNetPay) {
         AlertDialog(
             onDismissRequest = { },
@@ -67,7 +67,10 @@ fun CobroScreen(
                     Text(uiState.mensajeNetPay ?: "Procesando…")
                 }
             },
-            confirmButton = {}
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { viewModel.cancelarNetPay() }) { Text("Cancelar") }
+            }
         )
     }
 
