@@ -18,19 +18,67 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
     // LOGIN (usuarios MapiPOS)
     // ─────────────────────────────────────────────────────────────────────────
 
-    override suspend fun login(usuario: String, password: String): Usuario? =
-        db.queryOne(
-            """SELECT TOP 1 IdUsuario, Nombre, Usuario, ISNULL(IdPerfil,0) AS IdPerfil, Activo
-               FROM dbo.Usuarios
-               WHERE Usuario = ? AND Contrasena = ? AND Activo = 1""",
-            listOf(usuario, password)
-        ) { rs -> rs.toUsuario() }
+    override suspend fun login(usuario: String, password: String): Usuario? {
+        // Esquema real MapiPOS: contraseña PBKDF2-SHA256 (PasswordHash/PasswordSalt VARBINARY),
+        // con fallback a la columna legacy Password en texto plano.
+        val row = db.queryOne(
+            """SELECT TOP 1 u.IdUsuario, u.Usuario, u.Nombre,
+                      u.Password, u.PasswordHash, u.PasswordSalt, u.PasswordAlgo,
+                      ISNULL(u.IdTienda, 1) AS IdTienda
+               FROM dbo.Usuarios u
+               WHERE u.Usuario = ? AND u.Activo = 1""",
+            listOf(usuario)
+        ) { rs ->
+            UsuarioLogin(
+                idUsuario = rs.getInt("IdUsuario"),
+                usuario = rs.getString("Usuario") ?: "",
+                nombre = rs.getString("Nombre") ?: "",
+                passwordPlano = rs.getString("Password"),
+                passwordHash = rs.getBytes("PasswordHash"),
+                passwordSalt = rs.getBytes("PasswordSalt"),
+                passwordAlgo = rs.getString("PasswordAlgo"),
+                idTienda = rs.getInt("IdTienda")
+            )
+        } ?: return null
+
+        val ok = when {
+            row.passwordAlgo?.equals("PBKDF2-SHA256", ignoreCase = true) == true &&
+                row.passwordHash != null && row.passwordSalt != null ->
+                com.example.mapicomandas.util.PasswordHasher.verify(
+                    password, row.passwordHash, row.passwordSalt
+                )
+            // Fallback legacy: contraseña en texto plano (comparación ordinal)
+            !row.passwordPlano.isNullOrEmpty() -> row.passwordPlano == password
+            else -> false
+        }
+
+        return if (ok) {
+            Usuario(
+                idUsuario = row.idUsuario,
+                nombre = row.nombre,
+                usuario = row.usuario,
+                idPerfil = 0,
+                activo = true
+            )
+        } else null
+    }
 
     override suspend fun obtenerUsuarios(): List<Usuario> =
         db.query(
-            """SELECT IdUsuario, Nombre, Usuario, ISNULL(IdPerfil,0) AS IdPerfil, Activo
+            """SELECT IdUsuario, Nombre, Usuario, ISNULL(IdTienda,0) AS IdPerfil, Activo
                FROM dbo.Usuarios WHERE Activo = 1 ORDER BY Nombre"""
         ) { rs -> rs.toUsuario() }
+
+    private data class UsuarioLogin(
+        val idUsuario: Int,
+        val usuario: String,
+        val nombre: String,
+        val passwordPlano: String?,
+        val passwordHash: ByteArray?,
+        val passwordSalt: ByteArray?,
+        val passwordAlgo: String?,
+        val idTienda: Int
+    )
 
     // ─────────────────────────────────────────────────────────────────────────
     // MESAS
@@ -996,7 +1044,7 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         ancho = getInt("Ancho"),
         alto = getInt("Alto"),
         forma = getInt("Forma"),
-        color = getInt("Color"),
+        color = getString("Color") ?: "",
         idGrupoMesa = getObject("IdGrupoMesa") as? Int,
         idComanda = getObject("IdComanda") as? Int,
         folio = getString("Folio"),
@@ -1016,7 +1064,7 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         ancho = getInt("Ancho"),
         alto = getInt("Alto"),
         forma = getInt("Forma"),
-        color = getInt("Color"),
+        color = getString("Color") ?: "",
         idGrupoMesa = getObject("IdGrupoMesa") as? Int,
         activa = getBoolean("Activa")
     )

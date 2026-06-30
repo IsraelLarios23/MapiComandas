@@ -61,7 +61,7 @@ data class Mesa(
     val ancho: Int,
     val alto: Int,
     val forma: Int,
-    val color: Int,
+    val color: String,
     val idGrupoMesa: Int?,
     val activa: Boolean
 )
@@ -77,7 +77,7 @@ data class MesaUi(
     val ancho: Int,
     val alto: Int,
     val forma: Int,
-    val color: Int,
+    val color: String,
     val idGrupoMesa: Int?,
     val idComanda: Int?,
     val folio: String?,
