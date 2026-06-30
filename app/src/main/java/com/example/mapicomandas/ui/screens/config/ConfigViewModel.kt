@@ -28,8 +28,8 @@ data class ConfigUiState(
     val fastFood: Boolean = false,
     // NetPay (valores de prueba MapiPOS por defecto)
     val npBaseUrl: String = "https://api-154.api-netpay.com",
-    val npOAuthPath: String = "/oauth/token",
-    val npSalePath: String = "/gateway/integration-service/transactions/sale",
+    val npOAuthPath: String = "/oauth-service/oauth/token",
+    val npSalePath: String = "/integration-service/transactions/sale",
     val npAuthString: String = "dHJ1c3RlZC1hcHA6c2VjcmV0",
     val npUsername: String = "Nacional",
     val npPassword: String = "netpay",

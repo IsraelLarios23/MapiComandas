@@ -34,8 +34,8 @@ class NetPayService @Inject constructor(
         config.cargar()
         return NetPayConfig(
             baseUrl = config.texto("NetPayBaseUrl", "https://api-154.api-netpay.com"),
-            oauthPath = config.texto("NetPayOAuthPath", "/gateway/oauth-service/oauth/token"),
-            salePath = config.texto("NetPaySalePath", "/gateway/integration-service/transactions/sale"),
+            oauthPath = config.texto("NetPayOAuthPath", "/oauth-service/oauth/token"),
+            salePath = config.texto("NetPaySalePath", "/integration-service/transactions/sale"),
             authString = config.texto("NetPayAuthString"),
             username = config.texto("NetPayUsername"),
             password = config.texto("NetPayPassword"),
@@ -160,7 +160,7 @@ class NetPayService @Inject constructor(
         if (!cfg.estaConfigurado || orderId.isBlank()) return@withContext false
         runCatching {
             val token = solicitarToken(cfg)
-            val url = URL(cfg.baseUrl.trimEnd('/') + config.texto("NetPayCancelPath", "/gateway/integration-service/transactions/cancel"))
+            val url = URL(cfg.baseUrl.trimEnd('/') + config.texto("NetPayCancelPath", "/integration-service/transactions/cancel"))
             val body = JSONObject().apply {
                 put("serialNumber", cfg.serialNumber)
                 put("orderId", orderId)
