@@ -5,6 +5,9 @@ import java.util.Locale
 /** Datos para construir el ticket de venta (réplica de MapiPOS TicketPrintService). */
 data class TicketRenglon(val cantidad: Double, val descripcion: String, val importe: Double)
 
+/** Pago en el ticket; [referencia] = autorización de la terminal (si aplica). */
+data class TicketPago(val nombre: String, val importe: Double, val referencia: String = "")
+
 data class TicketData(
     val empresa: String = "",
     val header: String = "",
@@ -23,6 +26,7 @@ data class TicketData(
     val pagado: Double,
     val cambio: Double,
     val formaPago: String,
+    val pagos: List<TicketPago> = emptyList(),
     val observaciones: String = "",
     val desglosaIva: Boolean = true
 )
@@ -89,7 +93,15 @@ object TicketFormatter {
             l.add(dosColumnas("Descuento:", "-" + money(d.descuento)))
         }
         l.add(dosColumnas("TOTAL:", money(d.total)))
-        l.add(dosColumnas("Pago (${d.formaPago}):", money(d.pagado)))
+        // Pagos: una línea por forma + autorización de la terminal (si hay)
+        if (d.pagos.isNotEmpty()) {
+            d.pagos.forEach { p ->
+                l.add(dosColumnas("Pago (${p.nombre}):", money(p.importe)))
+                if (p.referencia.isNotBlank()) l.add("  Autorización: ${p.referencia}")
+            }
+        } else {
+            l.add(dosColumnas("Pago (${d.formaPago}):", money(d.pagado)))
+        }
         if (d.cambio > 0) l.add(dosColumnas("Cambio:", money(d.cambio)))
 
         // ── Observaciones + pie ──

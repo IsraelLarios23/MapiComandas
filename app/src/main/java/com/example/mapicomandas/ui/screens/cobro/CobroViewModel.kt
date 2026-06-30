@@ -240,6 +240,9 @@ class CobroViewModel @Inject constructor(
             .filter { it.status != StatusLinea.CANCELADO }
             .map { TicketRenglon(it.cantidad, it.nombreArticulo, it.total) }
         val pagoTexto = s.pagos.joinToString(", ") { it.nombreFormaPago }
+        val ticketPagos = s.pagos.map {
+            com.example.mapicomandas.util.TicketPago(it.nombreFormaPago, it.importe, it.referencia)
+        }
         val totalConPropina = (comanda?.total ?: 0.0) + s.propinaIngresada
         return TicketFormatter.construir(
             TicketData(
@@ -255,6 +258,7 @@ class CobroViewModel @Inject constructor(
                 pagado = s.totalPagado,
                 cambio = s.cambio,
                 formaPago = pagoTexto,
+                pagos = ticketPagos,
                 observaciones = if (s.propinaIngresada > 0)
                     "Propina: $${String.format(java.util.Locale.US, "%,.2f", s.propinaIngresada)}" else ""
             )
