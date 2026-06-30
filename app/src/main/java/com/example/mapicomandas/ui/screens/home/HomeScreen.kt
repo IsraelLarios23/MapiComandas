@@ -76,20 +76,32 @@ fun HomeScreen(
         ) {
             Text(
                 "¿Qué deseas hacer?",
-                modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 8.dp),
+                modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp),
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Medium
             )
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+            // Rejilla de 2 columnas con filas de peso igual → todos los botones caben sin scroll
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(funciones) { f ->
-                    BotonFuncion(f)
+                funciones.chunked(2).forEach { fila ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        fila.forEach { f ->
+                            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                                BotonFuncion(f)
+                            }
+                        }
+                        // Rellena si la fila tiene 1 solo elemento (impar)
+                        if (fila.size == 1) Spacer(modifier = Modifier.weight(1f))
+                    }
                 }
             }
         }
@@ -100,7 +112,7 @@ fun HomeScreen(
 fun BotonFuncion(funcion: FuncionHome) {
     Card(
         modifier = Modifier
-            .aspectRatio(1f)
+            .fillMaxSize()
             .clickable(onClick = funcion.accion),
         colors = CardDefaults.cardColors(containerColor = funcion.color),
         elevation = CardDefaults.cardElevation(4.dp)

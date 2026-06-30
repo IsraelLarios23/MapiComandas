@@ -218,14 +218,30 @@ fun ComandaScreen(
                     )
                 }
 
-                // Botones de acción
+                // Acciones secundarias
+                val hayLineas = uiState.lineas.any { it.status != StatusLinea.CANCELADO }
                 BotonesAccionComanda(
-                    tieneLineas = uiState.lineas.any { it.status != StatusLinea.CANCELADO },
+                    tieneLineas = hayLineas,
                     onEnviarCocina = { viewModel.enviarACocina() },
                     onImprimirCuenta = { viewModel.imprimirComanda() },
-                    onDividir = { viewModel.setMostrarDividir(true) },
-                    onCobrar = { onCobrar(viewModel.idComanda) }
+                    onDividir = { viewModel.setMostrarDividir(true) }
                 )
+
+                // Botón COBRAR fijo, siempre visible al fondo
+                Button(
+                    onClick = { onCobrar(viewModel.idComanda) },
+                    enabled = hayLineas,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .height(56.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                ) {
+                    Icon(Icons.Default.AttachMoney, null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("COBRAR", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
@@ -412,13 +428,12 @@ fun BotonesAccionComanda(
     tieneLineas: Boolean,
     onEnviarCocina: () -> Unit,
     onImprimirCuenta: () -> Unit,
-    onDividir: () -> Unit,
-    onCobrar: () -> Unit
+    onDividir: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp),
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Button(
@@ -450,16 +465,6 @@ fun BotonesAccionComanda(
             Icon(Icons.Default.CallSplit, null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))
             Text("Dividir", fontSize = 11.sp)
-        }
-        Button(
-            onClick = onCobrar,
-            enabled = tieneLineas,
-            modifier = Modifier.weight(1f),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
-        ) {
-            Icon(Icons.Default.AttachMoney, null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Cobrar", fontSize = 11.sp)
         }
     }
 }
