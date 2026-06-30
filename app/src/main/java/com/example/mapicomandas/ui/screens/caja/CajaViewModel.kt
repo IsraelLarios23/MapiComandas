@@ -100,9 +100,10 @@ class CajaViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repo.realizarCorteZ(session.idCaja, session.idUsuario)
+                session.setCajaHabilitada(false)
                 _uiState.value = _uiState.value.copy(
                     mostrarCorteZ = false,
-                    exito = "Corte Z realizado"
+                    exito = "Corte Z realizado — caja cerrada"
                 )
                 cargarResumen()
             } catch (e: Throwable) {

@@ -748,23 +748,38 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             emptyList()
         ) { rs -> rs.getString("E") } ?: "none"
 
+    /** IdCorteCaja del corte ABIERTO de la caja, o null si no hay (caja cerrada). */
+    private suspend fun corteAbiertoId(idTienda: Int, idCaja: Int): Int? =
+        db.queryOne(
+            """SELECT TOP 1 IdCorteCaja FROM dbo.CorteCaja
+               WHERE IdTienda=? AND ISNULL(IdCaja,?)=? AND Estatus='Abierta'
+               ORDER BY IdCorteCaja DESC""",
+            listOf(idTienda, idCaja, idCaja)
+        ) { rs -> rs.getInt("IdCorteCaja") }
+
     override suspend fun habilitarCaja(idCaja: Int, idUsuario: Int) {
-        // En el esquema lowercase, abrir caja = crear una apertura (si no hay una hoy)
+        val idTienda = session.idTienda
+        // Si ya hay un corte abierto no se vuelve a abrir
+        if (corteAbiertoId(idTienda, idCaja) != null) return
+
+        // Apertura para movimientos (esquema lowercase)
         if (esquemaMovCaja() == "lower") {
-            val existe = db.queryOne(
-                """SELECT TOP 1 IdApertura FROM dbo.aperturas_caja
-                   WHERE IdTienda=? AND ISNULL(IdCaja,?)=? AND CAST(FechaApertura AS DATE)=CAST(GETDATE() AS DATE)
-                   ORDER BY FechaApertura DESC""",
-                listOf(session.idTienda, idCaja, idCaja)
-            ) { rs -> rs.getInt("IdApertura") }
-            if (existe == null) {
-                db.execute(
-                    """INSERT INTO dbo.aperturas_caja (IdTienda,IdCaja,IdCajero,FondoInicial,FechaApertura)
-                       VALUES (?,?,?,0,GETDATE())""",
-                    listOf(session.idTienda, idCaja, idUsuario)
-                )
-            }
+            db.execute(
+                """INSERT INTO dbo.aperturas_caja (IdTienda,IdCaja,IdCajero,FondoInicial,FechaApertura)
+                   VALUES (?,?,?,0,GETDATE())""",
+                listOf(idTienda, idCaja, idUsuario)
+            )
         }
+        // Corte 'Abierta' = inicio del periodo
+        val folio = "C" + java.time.LocalDateTime.now()
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"))
+        db.execute(
+            """INSERT INTO dbo.CorteCaja
+               (Folio,Fecha,HoraInicio,HoraFin,IdTienda,IdCaja,IdCajero,FondoInicial,Estatus)
+               VALUES (?,CAST(GETDATE() AS DATE),CAST(GETDATE() AS TIME),CAST(GETDATE() AS TIME),
+                       ?,?,?,0,'Abierta')""",
+            listOf(folio, idTienda, idCaja, idUsuario)
+        )
     }
 
     override suspend fun registrarMovimientoCaja(mov: MovimientoCaja): Int =
@@ -793,8 +808,21 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             else -> 0
         }
 
-    /** Ingresos/retiros del día según el esquema de movimientos de caja. */
-    private suspend fun movimientosDelDia(idCaja: Int): Pair<Double, Double> {
+    // Predicado SQL: limita al periodo del corte abierto (o al día si idCorte es null).
+    private fun filtroPeriodoVentas(idCorte: Int?): String =
+        if (idCorte != null)
+            "AND (CAST(v.Fecha AS DATETIME)+CAST(v.Hora AS DATETIME)) >= " +
+            "(SELECT CAST(c.Fecha AS DATETIME)+CAST(c.HoraInicio AS DATETIME) FROM dbo.CorteCaja c WHERE c.IdCorteCaja=$idCorte)"
+        else "AND v.Fecha=CAST(GETDATE() AS DATE)"
+
+    private fun filtroPeriodoMov(idCorte: Int?): String =
+        if (idCorte != null)
+            ">= (SELECT CAST(c.Fecha AS DATETIME)+CAST(c.HoraInicio AS DATETIME) FROM dbo.CorteCaja c WHERE c.IdCorteCaja=$idCorte)"
+        else ">= CAST(CAST(GETDATE() AS DATE) AS DATETIME)"
+
+    /** Ingresos/retiros del periodo del corte abierto. */
+    private suspend fun movimientosPeriodo(idCaja: Int, idCorte: Int?): Pair<Double, Double> {
+        val periodo = filtroPeriodoMov(idCorte)
         val sql = when (esquemaMovCaja()) {
             "lower" -> """
                 SELECT
@@ -802,15 +830,14 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
                   ISNULL(SUM(CASE WHEN m.tipo_movimiento='Retiro' THEN m.monto ELSE 0 END),0) AS Retiros
                 FROM dbo.movimientos_caja m
                 LEFT JOIN dbo.aperturas_caja a ON a.IdApertura=m.apertura_id
-                WHERE CAST(m.fecha AS DATE)=CAST(GETDATE() AS DATE)
-                  AND (a.IdCaja IS NULL OR a.IdCaja=?)
+                WHERE m.fecha $periodo AND (a.IdCaja IS NULL OR a.IdCaja=?)
             """.trimIndent()
             "upper" -> """
                 SELECT
                   ISNULL(SUM(CASE WHEN Tipo IN ('I','Incremento','Ingreso') THEN Monto ELSE 0 END),0) AS Ingresos,
                   ISNULL(SUM(CASE WHEN Tipo IN ('R','Retiro') THEN Monto ELSE 0 END),0) AS Retiros
                 FROM dbo.MovimientosCaja
-                WHERE IdCaja=? AND CAST(Fecha AS DATE)=CAST(GETDATE() AS DATE)
+                WHERE IdCaja=? AND Fecha $periodo
             """.trimIndent()
             else -> return 0.0 to 0.0
         }
@@ -821,96 +848,105 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         }.getOrNull() ?: (0.0 to 0.0)
     }
 
-    override suspend fun obtenerResumenCaja(idCaja: Int, idTienda: Int): ResumenCaja {
-        // Ventas no tiene IdCaja en el esquema real → se filtra por IdTienda + fecha de hoy.
-        val resumen = db.queryOne(
+    private data class TotalesVentaPeriodo(
+        val efectivo: Double, val tarjeta: Double, val transfer: Double,
+        val otros: Double, val total: Double, val num: Int
+    )
+
+    private suspend fun ventasPeriodo(idTienda: Int, idCorte: Int?): TotalesVentaPeriodo {
+        val filtro = filtroPeriodoVentas(idCorte)
+        return db.queryOne(
             """SELECT
-               ISNULL(SUM(v.Total),0) AS TotalVentas,
-               ISNULL(SUM(CASE WHEN LOWER(fp.Nombre) LIKE '%efectivo%' THEN pv.Monto ELSE 0 END),0) AS TotalEfectivo,
-               ISNULL(SUM(CASE WHEN LOWER(fp.Nombre) LIKE '%efectivo%' THEN 0 ELSE pv.Monto END),0) AS TotalOtros,
-               COUNT(DISTINCT v.IdVenta) AS NumTransacciones
+               ISNULL(SUM(CASE WHEN LOWER(fp.Nombre) LIKE '%efectivo%' THEN pv.Monto ELSE 0 END),0) AS Efectivo,
+               ISNULL(SUM(CASE WHEN LOWER(fp.Nombre) LIKE '%tarjeta%' OR LOWER(fp.Nombre) LIKE '%credito%' OR LOWER(fp.Nombre) LIKE '%debito%' THEN pv.Monto ELSE 0 END),0) AS Tarjeta,
+               ISNULL(SUM(CASE WHEN LOWER(fp.Nombre) LIKE '%transfer%' THEN pv.Monto ELSE 0 END),0) AS Transferencia,
+               ISNULL((SELECT SUM(v2.Total) FROM dbo.Ventas v2 WHERE v2.IdTienda=? AND ISNULL(v2.Cancelada,0)=0
+                       ${filtro.replace("v.", "v2.")}),0) AS Total,
+               COUNT(DISTINCT v.IdVenta) AS Num
                FROM dbo.Ventas v
                INNER JOIN dbo.PagosVenta pv ON pv.IdVenta=v.IdVenta
                INNER JOIN dbo.FormasPago fp ON fp.IdFormaPago=pv.IdFormaPago
-               WHERE v.IdTienda=? AND v.Fecha=CAST(GETDATE() AS DATE) AND ISNULL(v.Cancelada,0)=0""",
-            listOf(idTienda)
+               WHERE v.IdTienda=? AND ISNULL(v.Cancelada,0)=0 $filtro""",
+            listOf(idTienda, idTienda)
         ) { rs ->
-            mapOf(
-                "ventas" to rs.getDouble("TotalVentas"),
-                "efectivo" to rs.getDouble("TotalEfectivo"),
-                "otros" to rs.getDouble("TotalOtros"),
-                "num" to rs.getInt("NumTransacciones")
+            TotalesVentaPeriodo(
+                efectivo = rs.getDouble("Efectivo"),
+                tarjeta = rs.getDouble("Tarjeta"),
+                transfer = rs.getDouble("Transferencia"),
+                otros = 0.0,
+                total = rs.getDouble("Total"),
+                num = rs.getInt("Num")
             )
-        } ?: mapOf("ventas" to 0.0, "efectivo" to 0.0, "otros" to 0.0, "num" to 0)
+        } ?: TotalesVentaPeriodo(0.0, 0.0, 0.0, 0.0, 0.0, 0)
+    }
 
-        val movimientos = movimientosDelDia(idCaja)
+    override suspend fun obtenerResumenCaja(idCaja: Int, idTienda: Int): ResumenCaja {
+        val idCorte = corteAbiertoId(idTienda, idCaja)
+        // Sin corte abierto → caja cerrada → todo en cero
+        if (idCorte == null) return ResumenCaja(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0)
 
-        val ventas = resumen["ventas"] as Double
-        val efectivo = resumen["efectivo"] as Double
-        val otros = resumen["otros"] as Double
-        val num = resumen["num"] as Int
-        val ingresos = movimientos.first
-        val retiros = movimientos.second
+        val v = ventasPeriodo(idTienda, idCorte)
+        val (ingresos, retiros) = movimientosPeriodo(idCaja, idCorte)
+        val otros = (v.total - v.efectivo - v.tarjeta - v.transfer).coerceAtLeast(0.0)
 
         return ResumenCaja(
-            totalVentas = ventas,
-            totalEfectivo = efectivo,
-            totalOtros = otros,
+            totalVentas = v.total,
+            totalEfectivo = v.efectivo,
+            totalOtros = v.tarjeta + v.transfer + otros,
             totalRetiros = retiros,
             totalIngresos = ingresos,
-            saldoFinal = efectivo + ingresos - retiros,
-            numTransacciones = num
+            saldoFinal = v.efectivo + ingresos - retiros,
+            numTransacciones = v.num
         )
     }
 
     override suspend fun realizarCorteZ(idCaja: Int, idUsuario: Int) {
         val idTienda = session.idTienda
-        val (incrementos, retiros) = movimientosDelDia(idCaja)
-        db.inTransaction { conn ->
+        val idCorte = corteAbiertoId(idTienda, idCaja)
+            ?: error("No hay una caja abierta para realizar el Corte Z.")
 
-        // Totales de ventas del día por medio de pago (Ventas no tiene IdCaja → por tienda+fecha)
-        val ventas = conn.queryOne(
-            """SELECT
-               ISNULL(SUM(CASE WHEN LOWER(fp.Nombre) LIKE '%efectivo%' THEN pv.Monto ELSE 0 END),0) AS Efectivo,
-               ISNULL(SUM(CASE WHEN LOWER(fp.Nombre) LIKE '%tarjeta%' OR LOWER(fp.Nombre) LIKE '%credito%' OR LOWER(fp.Nombre) LIKE '%debito%' THEN pv.Monto ELSE 0 END),0) AS Tarjeta,
-               ISNULL(SUM(CASE WHEN LOWER(fp.Nombre) LIKE '%transfer%' THEN pv.Monto ELSE 0 END),0) AS Transferencia,
-               ISNULL(SUM(v.Total),0) AS Total
-               FROM dbo.Ventas v
-               INNER JOIN dbo.PagosVenta pv ON pv.IdVenta=v.IdVenta
-               INNER JOIN dbo.FormasPago fp ON fp.IdFormaPago=pv.IdFormaPago
-               WHERE v.IdTienda=? AND v.Fecha=CAST(GETDATE() AS DATE) AND ISNULL(v.Cancelada,0)=0""",
-            listOf(idTienda)
-        ) { rs ->
-            mapOf(
-                "efectivo" to rs.getDouble("Efectivo"),
-                "tarjeta" to rs.getDouble("Tarjeta"),
-                "transfer" to rs.getDouble("Transferencia"),
-                "total" to rs.getDouble("Total")
-            )
-        } ?: mapOf("efectivo" to 0.0, "tarjeta" to 0.0, "transfer" to 0.0, "total" to 0.0)
-
-        val efectivo = ventas["efectivo"] as Double
-        val tarjeta = ventas["tarjeta"] as Double
-        val transfer = ventas["transfer"] as Double
-        val totalVentas = ventas["total"] as Double
-        val otros = (totalVentas - efectivo - tarjeta - transfer).coerceAtLeast(0.0)
+        val v = ventasPeriodo(idTienda, idCorte)
+        val (incrementos, retiros) = movimientosPeriodo(idCaja, idCorte)
+        val otros = (v.total - v.efectivo - v.tarjeta - v.transfer).coerceAtLeast(0.0)
         val fondoInicial = 0.0
-        val efectivoEsperado = fondoInicial + efectivo + incrementos - retiros
+        val efectivoEsperado = fondoInicial + v.efectivo + incrementos - retiros
 
-        val folio = "Z" + java.time.LocalDateTime.now()
-            .format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"))
+        db.inTransaction { conn ->
+            // Cerrar el corte abierto con los totales del periodo
+            conn.executeUpdate(
+                """UPDATE dbo.CorteCaja SET
+                     HoraFin=CAST(GETDATE() AS TIME),
+                     VentasEfectivo=?, VentasTarjeta=?, VentasTransferencia=?, VentasOtros=?,
+                     TotalVentas=?, Retiros=?, Incrementos=?,
+                     EfectivoEsperado=?, EfectivoReal=?, Diferencia=0, Estatus='Cerrada'
+                   WHERE IdCorteCaja=? AND Estatus='Abierta'""",
+                listOf(v.efectivo, v.tarjeta, v.transfer, otros,
+                       v.total, retiros, incrementos,
+                       efectivoEsperado, efectivoEsperado, idCorte)
+            )
 
-        conn.executeUpdate(
-            """INSERT INTO dbo.CorteCaja
-               (Folio,Fecha,HoraInicio,HoraFin,IdTienda,IdCajero,FondoInicial,
-                VentasEfectivo,VentasTarjeta,VentasTransferencia,VentasOtros,TotalVentas,
-                Retiros,Incrementos,EfectivoEsperado,EfectivoReal,Diferencia,Estatus,IdCaja)
-               VALUES (?,CAST(GETDATE() AS DATE),CAST(GETDATE() AS TIME),CAST(GETDATE() AS TIME),
-                       ?,?,?,?,?,?,?,?,?,?,?,?,0,'Cerrada',?)""",
-            listOf(folio, idTienda, idUsuario, fondoInicial,
-                   efectivo, tarjeta, transfer, otros, totalVentas,
-                   retiros, incrementos, efectivoEsperado, efectivoEsperado, idCaja)
-        )
+            // Retiro automático del efectivo esperado → deja el cajón en cero
+            if (efectivoEsperado > 0) {
+                when (esquemaMovCaja()) {
+                    "lower" -> {
+                        val apertura = conn.queryOne(
+                            """SELECT TOP 1 IdApertura FROM dbo.aperturas_caja
+                               WHERE IdTienda=? AND ISNULL(IdCaja,?)=? ORDER BY FechaApertura DESC""",
+                            listOf(idTienda, idCaja, idCaja)
+                        ) { rs -> rs.getInt("IdApertura") }
+                        conn.executeUpdate(
+                            """INSERT INTO dbo.movimientos_caja (apertura_id,tipo_movimiento,monto,motivo,usuario_id,fecha)
+                               VALUES (?,?,?,?,?,GETDATE())""",
+                            listOf(apertura, "Retiro", efectivoEsperado, "Retiro automático - Corte Z", idUsuario)
+                        )
+                    }
+                    "upper" -> conn.executeUpdate(
+                        """INSERT INTO dbo.MovimientosCaja (IdTienda,IdUsuario,Tipo,Monto,Concepto,Fecha,IdCaja)
+                           VALUES (?,?,'Retiro',?,?,GETDATE(),?)""",
+                        listOf(idTienda, idUsuario, efectivoEsperado, "Retiro automático - Corte Z", idCaja)
+                    )
+                }
+            }
         }
     }
 
