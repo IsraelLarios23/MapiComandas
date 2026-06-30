@@ -159,12 +159,41 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         tipoServicio: Int, idMesero: Int, idTienda: Int, idCaja: Int,
         cliente: String, tel: String, dir: String,
         idRepartidor: Int?, idZona: Int?, cargoEntrega: Double
-    ): Int {
-        // Domicilio/para-llevar no existe en la BD MapiPOS actual (solo UI).
-        // Ver memoria mapipos-port-pendientes: requiere migración para activarse.
-        throw UnsupportedOperationException(
-            "El módulo de domicilio/para-llevar no está disponible en esta base de datos."
+    ): Int = db.inTransaction { conn ->
+        val folio = generarFolio(conn, "K", idTienda, idCaja)
+        val statusEntrega = if (tipoServicio == TipoServicio.DOMICILIO) 1 else 0
+        val idComanda = conn.insertAndGetId(
+            """INSERT INTO dbo.MaestroComandas
+                   (Folio, IdMesa, IdMesero, IdUsuario, IdTienda, NumPersonas, Status, FechaApertura, Observaciones,
+                    Subtotal, Descuento, IVA, Total,
+                    TipoServicio, NombreCliente, TelefonoCliente, DireccionEntrega, IdRepartidor,
+                    IdZonaReparto, CargoEntrega, StatusEntrega)
+               VALUES (?, NULL, ?, ?, ?, 1, 1, GETDATE(), '', 0,0,0,0,
+                       ?, ?, ?, ?, ?, ?, ?, ?)""",
+            listOf(folio, idMesero, session.idUsuario, idTienda,
+                   tipoServicio, cliente, tel, dir, idRepartidor, idZona, cargoEntrega, statusEntrega)
         )
+        // Cargo de envío como línea real del artículo de servicio 'ENV' (si existe)
+        if (cargoEntrega > 0) {
+            val idEnv = conn.queryOne(
+                "SELECT TOP 1 IdArticulo FROM dbo.Articulos WHERE Clave='ENV'",
+                emptyList()
+            ) { rs -> rs.getInt("IdArticulo") }
+            if (idEnv != null) {
+                val linea = conn.queryInt(
+                    "SELECT ISNULL(MAX(Linea),0)+1 FROM dbo.DetalleComandas WITH (UPDLOCK,HOLDLOCK) WHERE IdComanda=?",
+                    listOf(idComanda)
+                )
+                conn.executeUpdate(
+                    """INSERT INTO dbo.DetalleComandas
+                       (IdComanda,IdArticulo,Linea,Cantidad,PrecioUnitario,Descuento,Subtotal,IVA,Total,Status,Notas,NumLugar)
+                       VALUES (?,?,?,1,?,0,?,0,?,1,'Cargo de envío',0)""",
+                    listOf(idComanda, idEnv, linea, cargoEntrega, cargoEntrega, cargoEntrega)
+                )
+                recalcularTotales(conn, idComanda)
+            }
+        }
+        idComanda
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -408,7 +437,8 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         val sql = """
             -- Parte 1: líneas normales (no kit)
             SELECT dc.IdDetalleComanda, dc.IdComanda, mc.Folio,
-                   CASE WHEN mc.IdMesa IS NULL THEN N'SIN MESA'
+                   CASE WHEN mc.IdMesa IS NULL THEN
+                        CASE ISNULL(mc.TipoServicio,2) WHEN 3 THEN N'DOMICILIO' WHEN 2 THEN N'PARA LLEVAR' ELSE N'SIN MESA' END
                         ELSE N'Mesa '+m.Numero END AS Mesa,
                    a.Nombre AS Articulo, dc.Cantidad, ISNULL(dc.Notas,'') AS Notas,
                    dc.Status, CONVERT(NVARCHAR(30),dc.FechaEnvio,126) AS FechaEnvio,
@@ -426,7 +456,8 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             UNION ALL
             -- Parte 2: componentes de kit
             SELECT dc.IdDetalleComanda, dc.IdComanda, mc.Folio,
-                   CASE WHEN mc.IdMesa IS NULL THEN N'SIN MESA'
+                   CASE WHEN mc.IdMesa IS NULL THEN
+                        CASE ISNULL(mc.TipoServicio,2) WHEN 3 THEN N'DOMICILIO' WHEN 2 THEN N'PARA LLEVAR' ELSE N'SIN MESA' END
                         ELSE N'Mesa '+m.Numero END AS Mesa,
                    ca.Nombre AS Articulo, dc.Cantidad*ISNULL(ki.Cantidad,1) AS Cantidad,
                    ISNULL(dc.Notas,'') AS Notas,
@@ -579,33 +610,102 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // DOMICILIO — no disponible en la BD MapiPOS actual (solo UI).
-    // Requiere migración (columnas en MaestroComandas + tablas RepartidoresRest/
-    // ZonasReparto). Ver memoria mapipos-port-pendientes.
+    // DOMICILIO / PARA LLEVAR
     // ─────────────────────────────────────────────────────────────────────────
 
-    private fun domicilioNoDisponible(): Nothing = throw UnsupportedOperationException(
-        "El módulo de domicilio no está disponible en esta base de datos."
-    )
+    override suspend fun obtenerComandasSinMesaAbiertas(): List<ComandaSinMesa> =
+        db.query(
+            """SELECT mc.IdComanda, mc.Folio, ISNULL(mc.TipoServicio,2) AS TipoServicio,
+                      mc.NombreCliente, mc.TelefonoCliente, mc.DireccionEntrega,
+                      mc.IdRepartidor, r.Nombre AS NombreRepartidor,
+                      mc.IdZonaReparto, z.Nombre AS NombreZona,
+                      ISNULL(mc.CargoEntrega,0) AS CargoEntrega, ISNULL(mc.StatusEntrega,0) AS StatusEntrega,
+                      ISNULL(mc.Total,0) AS Total, mc.Status,
+                      CONVERT(NVARCHAR(30),mc.FechaApertura,126) AS FechaAperturaStr
+               FROM dbo.MaestroComandas mc
+               LEFT JOIN dbo.ZonasReparto z ON z.IdZonaReparto = mc.IdZonaReparto
+               LEFT JOIN dbo.RepartidoresRest r ON r.IdRepartidor = mc.IdRepartidor
+               WHERE mc.IdMesa IS NULL AND mc.Status NOT IN (5,6)
+               ORDER BY mc.FechaApertura DESC"""
+        ) { rs ->
+            ComandaSinMesa(
+                idComanda = rs.getInt("IdComanda"),
+                folio = rs.getString("Folio"),
+                tipoServicio = rs.getInt("TipoServicio"),
+                nombreCliente = rs.getString("NombreCliente"),
+                telefonoCliente = rs.getString("TelefonoCliente"),
+                direccionEntrega = rs.getString("DireccionEntrega"),
+                idRepartidor = rs.getObject("IdRepartidor") as? Int,
+                nombreRepartidor = rs.getString("NombreRepartidor"),
+                idZonaReparto = rs.getObject("IdZonaReparto") as? Int,
+                nombreZona = rs.getString("NombreZona"),
+                cargoEntrega = rs.getDouble("CargoEntrega"),
+                statusEntrega = rs.getInt("StatusEntrega"),
+                total = rs.getDouble("Total"),
+                fechaApertura = rs.getString("FechaAperturaStr") ?: "",
+                status = rs.getInt("Status")
+            )
+        }
 
-    override suspend fun obtenerComandasSinMesaAbiertas(): List<ComandaSinMesa> = emptyList()
-
-    override suspend fun actualizarStatusEntrega(idComanda: Int, status: Int) = domicilioNoDisponible()
+    override suspend fun actualizarStatusEntrega(idComanda: Int, status: Int) {
+        db.execute(
+            "UPDATE dbo.MaestroComandas SET StatusEntrega=? WHERE IdComanda=?",
+            listOf(status, idComanda)
+        )
+    }
 
     override suspend fun actualizarDomicilio(
         idComanda: Int, cliente: String, tel: String, dir: String,
         idRepartidor: Int?, idZona: Int?, cargo: Double
-    ) = domicilioNoDisponible()
+    ) {
+        db.execute(
+            """UPDATE dbo.MaestroComandas
+               SET NombreCliente=?, TelefonoCliente=?, DireccionEntrega=?,
+                   IdRepartidor=?, IdZonaReparto=?, CargoEntrega=?
+               WHERE IdComanda=?""",
+            listOf(cliente, tel, dir, idRepartidor, idZona, cargo, idComanda)
+        )
+    }
 
-    override suspend fun obtenerRepartidores(soloActivos: Boolean): List<Repartidor> = emptyList()
+    override suspend fun obtenerRepartidores(soloActivos: Boolean): List<Repartidor> =
+        db.query(
+            "SELECT IdRepartidor, Nombre, ISNULL(Telefono,'') AS Telefono, Activo FROM dbo.RepartidoresRest" +
+                (if (soloActivos) " WHERE Activo=1" else "") + " ORDER BY Nombre"
+        ) { rs ->
+            Repartidor(rs.getInt("IdRepartidor"), rs.getString("Nombre"),
+                rs.getString("Telefono") ?: "", rs.getBoolean("Activo"))
+        }
 
     override suspend fun guardarRepartidor(id: Int, nombre: String, tel: String, activo: Boolean): Int =
-        domicilioNoDisponible()
+        if (id > 0) {
+            db.execute(
+                "UPDATE dbo.RepartidoresRest SET Nombre=?,Telefono=?,Activo=? WHERE IdRepartidor=?",
+                listOf(nombre, tel, activo, id)
+            ); id
+        } else db.executeAndGetId(
+            "INSERT INTO dbo.RepartidoresRest (Nombre,Telefono,Activo) VALUES (?,?,?)",
+            listOf(nombre, tel, activo)
+        )
 
-    override suspend fun obtenerZonasReparto(soloActivos: Boolean): List<ZonaReparto> = emptyList()
+    override suspend fun obtenerZonasReparto(soloActivos: Boolean): List<ZonaReparto> =
+        db.query(
+            "SELECT IdZonaReparto, Nombre, Cargo, Activo FROM dbo.ZonasReparto" +
+                (if (soloActivos) " WHERE Activo=1" else "") + " ORDER BY Nombre"
+        ) { rs ->
+            ZonaReparto(rs.getInt("IdZonaReparto"), rs.getString("Nombre"),
+                rs.getDouble("Cargo"), rs.getBoolean("Activo"))
+        }
 
     override suspend fun guardarZonaReparto(id: Int, nombre: String, cargo: Double, activo: Boolean): Int =
-        domicilioNoDisponible()
+        if (id > 0) {
+            db.execute(
+                "UPDATE dbo.ZonasReparto SET Nombre=?,Cargo=?,Activo=? WHERE IdZonaReparto=?",
+                listOf(nombre, cargo, activo, id)
+            ); id
+        } else db.executeAndGetId(
+            "INSERT INTO dbo.ZonasReparto (Nombre,Cargo,Activo) VALUES (?,?,?)",
+            listOf(nombre, cargo, activo)
+        )
 
     // ─────────────────────────────────────────────────────────────────────────
     // CATÁLOGOS
@@ -1109,15 +1209,14 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         descuento = getDouble("Descuento"),
         iva = getDouble("IVA"),
         total = getDouble("Total"),
-        // Domicilio no existe en la BD MapiPOS actual → valores neutros (comedor)
-        tipoServicio = TipoServicio.COMEDOR,
-        nombreCliente = null,
-        telefonoCliente = null,
-        direccionEntrega = null,
-        idRepartidor = null,
-        idZonaReparto = null,
-        cargoEntrega = 0.0,
-        statusEntrega = StatusEntrega.NA
+        tipoServicio = optInt("TipoServicio") ?: TipoServicio.COMEDOR,
+        nombreCliente = optString("NombreCliente"),
+        telefonoCliente = optString("TelefonoCliente"),
+        direccionEntrega = optString("DireccionEntrega"),
+        idRepartidor = optInt("IdRepartidor"),
+        idZonaReparto = optInt("IdZonaReparto"),
+        cargoEntrega = optDouble("CargoEntrega"),
+        statusEntrega = optInt("StatusEntrega") ?: StatusEntrega.NA
     )
 
     private fun ResultSet.toLineaComanda() = LineaComanda(
