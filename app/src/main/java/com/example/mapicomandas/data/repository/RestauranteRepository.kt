@@ -97,4 +97,5 @@ interface RestauranteRepository {
 
     // ── Configuración ─────────────────────────────────────────────────────────
     suspend fun obtenerConfiguracion(idTienda: Int, idCaja: Int): List<ConfigEntry>
+    suspend fun guardarConfig(clave: String, valor: String)
 }

@@ -26,6 +26,15 @@ data class ConfigUiState(
     val ssl: String = "off",
     val impresoraTicket: String = "",
     val fastFood: Boolean = false,
+    // NetPay
+    val npBaseUrl: String = "https://suite.netpay.com.mx",
+    val npAuthString: String = "",
+    val npUsername: String = "",
+    val npPassword: String = "",
+    val npSerial: String = "",
+    val npStoreId: String = "",
+    val npGuardando: Boolean = false,
+    val npGuardado: Boolean = false,
     val probando: Boolean = false,
     val conectado: Boolean = false,
     val error: String? = null
@@ -38,11 +47,60 @@ data class ConfigUiState(
 @HiltViewModel
 class ConfigViewModel @Inject constructor(
     private val session: SessionManager,
-    private val db: JdbcDataSource
+    private val db: JdbcDataSource,
+    private val repo: com.example.mapicomandas.data.repository.RestauranteRepository,
+    private val configService: com.example.mapicomandas.data.ConfigService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(cargarEstadoInicial())
     val uiState: StateFlow<ConfigUiState> = _uiState
+
+    init { cargarNetPay() }
+
+    private fun cargarNetPay() {
+        if (!session.estaConfigurado) return
+        viewModelScope.launch {
+            runCatching {
+                configService.cargar()
+                _uiState.value = _uiState.value.copy(
+                    npBaseUrl = configService.texto("NetPayBaseUrl", "https://suite.netpay.com.mx"),
+                    npAuthString = configService.texto("NetPayAuthString"),
+                    npUsername = configService.texto("NetPayUsername"),
+                    npPassword = configService.texto("NetPayPassword"),
+                    npSerial = configService.texto("NetPaySerialNumber"),
+                    npStoreId = configService.texto("NetPayStoreId")
+                )
+            }
+        }
+    }
+
+    fun setNpBaseUrl(v: String) { _uiState.value = _uiState.value.copy(npBaseUrl = v) }
+    fun setNpAuthString(v: String) { _uiState.value = _uiState.value.copy(npAuthString = v) }
+    fun setNpUsername(v: String) { _uiState.value = _uiState.value.copy(npUsername = v) }
+    fun setNpPassword(v: String) { _uiState.value = _uiState.value.copy(npPassword = v) }
+    fun setNpSerial(v: String) { _uiState.value = _uiState.value.copy(npSerial = v) }
+    fun setNpStoreId(v: String) { _uiState.value = _uiState.value.copy(npStoreId = v) }
+
+    fun guardarNetPay() {
+        val s = _uiState.value
+        _uiState.value = s.copy(npGuardando = true, npGuardado = false)
+        viewModelScope.launch {
+            val r = runCatching {
+                repo.guardarConfig("NetPayBaseUrl", s.npBaseUrl.trim())
+                repo.guardarConfig("NetPayAuthString", s.npAuthString.trim())
+                repo.guardarConfig("NetPayUsername", s.npUsername.trim())
+                repo.guardarConfig("NetPayPassword", s.npPassword)
+                repo.guardarConfig("NetPaySerialNumber", s.npSerial.trim())
+                repo.guardarConfig("NetPayStoreId", s.npStoreId.trim())
+                configService.refrescar()
+            }
+            _uiState.value = _uiState.value.copy(
+                npGuardando = false,
+                npGuardado = r.isSuccess,
+                error = r.exceptionOrNull()?.message
+            )
+        }
+    }
 
     private fun cargarEstadoInicial(): ConfigUiState {
         val cfg = session.dbConfig

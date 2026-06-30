@@ -1071,6 +1071,16 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             "SELECT Clave, Valor FROM dbo.ConfiguracionSistema"
         ) { rs -> ConfigEntry(rs.getString("Clave"), rs.getString("Valor") ?: "") }
 
+    override suspend fun guardarConfig(clave: String, valor: String) {
+        db.execute(
+            """MERGE dbo.ConfiguracionSistema AS d
+               USING (SELECT ? AS Clave, ? AS Valor) AS s ON d.Clave = s.Clave
+               WHEN MATCHED THEN UPDATE SET Valor = s.Valor
+               WHEN NOT MATCHED THEN INSERT (Clave, Valor) VALUES (s.Clave, s.Valor);""",
+            listOf(clave, valor)
+        )
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // HELPERS INTERNOS
     // ─────────────────────────────────────────────────────────────────────────

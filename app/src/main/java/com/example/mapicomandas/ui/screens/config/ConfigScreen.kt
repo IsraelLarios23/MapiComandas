@@ -241,6 +241,55 @@ fun ConfigScreen(
                 )
             }
 
+            Divider()
+
+            // ── NetPay (terminal de tarjeta) ──
+            Text("Terminal NetPay", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            OutlinedTextField(
+                value = uiState.npBaseUrl, onValueChange = viewModel::setNpBaseUrl,
+                label = { Text("Base URL") }, placeholder = { Text("https://suite.netpay.com.mx") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true
+            )
+            OutlinedTextField(
+                value = uiState.npStoreId, onValueChange = viewModel::setNpStoreId,
+                label = { Text("Store ID") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+            )
+            OutlinedTextField(
+                value = uiState.npSerial, onValueChange = viewModel::setNpSerial,
+                label = { Text("Serial de la terminal") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+            )
+            OutlinedTextField(
+                value = uiState.npAuthString, onValueChange = viewModel::setNpAuthString,
+                label = { Text("Auth String (Basic base64)") },
+                supportingText = { Text("Sin el prefijo 'Basic '") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = uiState.npUsername, onValueChange = viewModel::setNpUsername,
+                    label = { Text("Usuario") }, modifier = Modifier.weight(1f), singleLine = true
+                )
+                OutlinedTextField(
+                    value = uiState.npPassword, onValueChange = viewModel::setNpPassword,
+                    label = { Text("Contraseña") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.weight(1f), singleLine = true
+                )
+            }
+            OutlinedButton(
+                onClick = { viewModel.guardarNetPay() },
+                enabled = !uiState.npGuardando,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (uiState.npGuardando) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                } else {
+                    Icon(Icons.Default.Save, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (uiState.npGuardado) "NetPay guardado ✓" else "Guardar NetPay")
+                }
+            }
+
             Spacer(Modifier.height(8.dp))
 
             Button(
