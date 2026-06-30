@@ -32,10 +32,17 @@ class NetPayService @Inject constructor(
 ) {
     suspend fun obtenerConfig(): NetPayConfig {
         config.cargar()
+        // Normaliza rutas viejas (/gateway/ o /oauth/token) a las correctas de la doc
+        fun rutaOAuth(v: String) =
+            if (v.contains("/gateway/") || v == "/oauth/token" || v.isBlank())
+                "/oauth-service/oauth/token" else v
+        fun rutaSale(v: String) =
+            if (v.contains("/gateway/") || v.isBlank())
+                "/integration-service/transactions/sale" else v
         return NetPayConfig(
             baseUrl = config.texto("NetPayBaseUrl", "https://api-154.api-netpay.com"),
-            oauthPath = config.texto("NetPayOAuthPath", "/oauth-service/oauth/token"),
-            salePath = config.texto("NetPaySalePath", "/integration-service/transactions/sale"),
+            oauthPath = rutaOAuth(config.texto("NetPayOAuthPath", "/oauth-service/oauth/token")),
+            salePath = rutaSale(config.texto("NetPaySalePath", "/integration-service/transactions/sale")),
             authString = config.texto("NetPayAuthString"),
             username = config.texto("NetPayUsername"),
             password = config.texto("NetPayPassword"),
@@ -52,9 +59,10 @@ class NetPayService @Inject constructor(
     suspend fun probarCredenciales(cfg: NetPayConfig): String? = withContext(Dispatchers.IO) {
         if (cfg.username.isBlank() || cfg.authString.isBlank())
             return@withContext "Faltan Usuario y/o Auth String."
+        val urlUsada = cfg.baseUrl.trimEnd('/') + cfg.oauthPath
         runCatching { solicitarToken(cfg) }.fold(
             onSuccess = { null },
-            onFailure = { "Falló la autenticación: ${it.message}" }
+            onFailure = { "POST $urlUsada\n${it.message}" }
         )
     }
 

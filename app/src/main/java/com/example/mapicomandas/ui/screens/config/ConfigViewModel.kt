@@ -71,10 +71,17 @@ class ConfigViewModel @Inject constructor(
                 // Solo sobrescribe con lo de BD si tiene valor; mantiene defaults de prueba
                 suspend fun pick(clave: String, actual: String) =
                     configService.texto(clave).ifBlank { actual }
+                // Auto-corrige rutas viejas guardadas (/gateway/ o /oauth/token)
+                fun rutaOAuth(v: String) =
+                    if (v.contains("/gateway/") || v == "/oauth/token" || v.isBlank())
+                        "/oauth-service/oauth/token" else v
+                fun rutaSale(v: String) =
+                    if (v.contains("/gateway/") || v.isBlank())
+                        "/integration-service/transactions/sale" else v
                 _uiState.value = s.copy(
                     npBaseUrl = pick("NetPayBaseUrl", s.npBaseUrl),
-                    npOAuthPath = pick("NetPayOAuthPath", s.npOAuthPath),
-                    npSalePath = pick("NetPaySalePath", s.npSalePath),
+                    npOAuthPath = rutaOAuth(pick("NetPayOAuthPath", s.npOAuthPath)),
+                    npSalePath = rutaSale(pick("NetPaySalePath", s.npSalePath)),
                     npAuthString = pick("NetPayAuthString", s.npAuthString),
                     npUsername = pick("NetPayUsername", s.npUsername),
                     npPassword = pick("NetPayPassword", s.npPassword),
