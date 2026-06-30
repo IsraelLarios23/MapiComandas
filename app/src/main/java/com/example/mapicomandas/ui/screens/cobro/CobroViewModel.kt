@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.mapicomandas.SessionManager
 import com.example.mapicomandas.data.model.*
 import com.example.mapicomandas.data.ConfigService
+import com.example.mapicomandas.data.netpay.NetPayService
 import com.example.mapicomandas.data.repository.RestauranteRepository
 import com.example.mapicomandas.util.PrinterService
 import com.example.mapicomandas.util.TicketData
@@ -36,6 +37,8 @@ data class CobroUiState(
     val mensajeImpresion: String? = null,
     val finalizado: Boolean = false,
     val nuevaComandaFastFood: Int? = null,   // id de la nueva comanda en modo fast food
+    val procesandoNetPay: Boolean = false,
+    val mensajeNetPay: String? = null,
     // División de cuenta
     val modoDivision: ModoDivision = ModoDivision.NINGUNO,
     val partesDivision: Int = 1,
@@ -50,6 +53,7 @@ class CobroViewModel @Inject constructor(
     val session: SessionManager,
     private val printerService: PrinterService,
     private val configService: ConfigService,
+    private val netPayService: NetPayService,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -92,6 +96,46 @@ class CobroViewModel @Inject constructor(
             pagos.add(PagoVenta(formaPago.idFormaPago, formaPago.nombre, importe))
         }
         recalcularPagos(pagos)
+    }
+
+    /** Cobra el [monto] con la terminal NetPay; al aprobar, registra el pago. */
+    fun cobrarConNetPay(formaPago: FormaPago, monto: Double) {
+        if (monto <= 0.0) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                procesandoNetPay = true,
+                mensajeNetPay = "Esperando terminal… presione la tarjeta"
+            )
+            val folio = _uiState.value.comanda?.folio
+            val res = runCatching { netPayService.cobrar(monto, folio) }.getOrElse {
+                com.example.mapicomandas.data.netpay.NetPayResultado(false, "ERROR", "", mensaje = it.message)
+            }
+            if (res.aprobada) {
+                val pagos = _uiState.value.pagos.toMutableList()
+                pagos.add(
+                    PagoVenta(
+                        idFormaPago = formaPago.idFormaPago,
+                        nombreFormaPago = formaPago.nombre,
+                        importe = monto,
+                        referencia = res.authCode ?: res.orderId ?: ""
+                    )
+                )
+                recalcularPagos(pagos)
+                _uiState.value = _uiState.value.copy(
+                    procesandoNetPay = false,
+                    mensajeNetPay = "Pago aprobado (auth ${res.authCode ?: "-"})"
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    procesandoNetPay = false,
+                    mensajeNetPay = "Pago no aprobado: ${res.mensaje ?: res.estatus}"
+                )
+            }
+        }
+    }
+
+    fun limpiarMensajeNetPay() {
+        _uiState.value = _uiState.value.copy(mensajeNetPay = null)
     }
 
     fun editarPago(idFormaPago: Int, nuevoMonto: Double) {

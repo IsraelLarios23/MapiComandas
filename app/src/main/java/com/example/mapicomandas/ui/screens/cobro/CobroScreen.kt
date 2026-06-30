@@ -48,6 +48,28 @@ fun CobroScreen(
             viewModel.limpiarMensajeImpresion()
         }
     }
+    LaunchedEffect(uiState.mensajeNetPay) {
+        if (!uiState.procesandoNetPay) uiState.mensajeNetPay?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.limpiarMensajeNetPay()
+        }
+    }
+
+    // Diálogo de espera de la terminal NetPay
+    if (uiState.procesandoNetPay) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("Terminal NetPay") },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                    Spacer(Modifier.width(16.dp))
+                    Text(uiState.mensajeNetPay ?: "Procesando…")
+                }
+            },
+            confirmButton = {}
+        )
+    }
 
     // Panel de venta cobrada: vista previa del ticket + Finalizar
     if (uiState.cobrado) {
@@ -265,7 +287,11 @@ fun CobroScreen(
                         montoSugerido = importeRestante,
                         montoMaximo = importeRestante,
                         onConfirmar = { monto ->
-                            viewModel.agregarPago(forma, monto)
+                            if (forma.nombre.contains("netpay", ignoreCase = true)) {
+                                viewModel.cobrarConNetPay(forma, monto)   // terminal
+                            } else {
+                                viewModel.agregarPago(forma, monto)
+                            }
                             formaSeleccionada = null
                         },
                         onDismiss = { formaSeleccionada = null }
