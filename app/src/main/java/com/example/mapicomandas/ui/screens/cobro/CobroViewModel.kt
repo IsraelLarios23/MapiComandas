@@ -6,7 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.mapicomandas.SessionManager
 import com.example.mapicomandas.data.model.*
 import com.example.mapicomandas.data.repository.RestauranteRepository
-import com.example.mapicomandas.util.EscPosPrinter
+import com.example.mapicomandas.util.PrinterService
 import com.example.mapicomandas.util.TicketData
 import com.example.mapicomandas.util.TicketFormatter
 import com.example.mapicomandas.util.TicketRenglon
@@ -46,6 +46,7 @@ enum class ModoDivision { NINGUNO, PARTES_IGUALES, POR_LUGAR, POR_IMPORTE }
 class CobroViewModel @Inject constructor(
     private val repo: RestauranteRepository,
     val session: SessionManager,
+    private val printerService: PrinterService,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -203,7 +204,7 @@ class CobroViewModel @Inject constructor(
         viewModelScope.launch {
             if (imprimir && session.impresoraTicket.isNotBlank()) {
                 _uiState.value = _uiState.value.copy(imprimiendo = true)
-                val error = EscPosPrinter.imprimir(session.impresoraTicket, lineas)
+                val error = printerService.imprimir(session.impresoraTicket, lineas)
                 _uiState.value = _uiState.value.copy(
                     imprimiendo = false,
                     mensajeImpresion = error ?: "Ticket impreso"

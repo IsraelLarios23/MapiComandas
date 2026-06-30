@@ -175,10 +175,15 @@ fun ConfigScreen(
             OutlinedTextField(
                 value = uiState.impresoraTicket,
                 onValueChange = viewModel::setImpresoraTicket,
-                label = { Text("Impresora de tickets (IP:puerto)") },
+                label = { Text("Impresora de tickets") },
                 placeholder = { Text("192.168.1.200:9100") },
                 leadingIcon = { Icon(Icons.Default.Print, null) },
-                supportingText = { Text("Impresora ESC/POS de red. Vacío = solo vista previa.") },
+                supportingText = {
+                    Text(
+                        "ESC/POS. Red: IP:puerto · Bluetooth: bt:NOMBRE · USB: usb (o usb:VID:PID). " +
+                        "Vacío = solo vista previa."
+                    )
+                },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
