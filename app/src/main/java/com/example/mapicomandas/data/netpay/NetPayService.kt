@@ -44,6 +44,20 @@ class NetPayService @Inject constructor(
         )
     }
 
+    /**
+     * Prueba las credenciales pidiendo el token OAuth (como FrmNetPayConfig de MapiPOS).
+     * Usa los valores [cfg] (sin guardar) para validar antes de persistir.
+     * Devuelve null si OK, o el mensaje de error.
+     */
+    suspend fun probarCredenciales(cfg: NetPayConfig): String? = withContext(Dispatchers.IO) {
+        if (cfg.username.isBlank() || cfg.authString.isBlank())
+            return@withContext "Faltan Usuario y/o Auth String."
+        runCatching { solicitarToken(cfg) }.fold(
+            onSuccess = { null },
+            onFailure = { "Falló la autenticación: ${it.message}" }
+        )
+    }
+
     /** Crea dbo.PagosNetPay si no existe (mismo esquema que MapiPOS). */
     suspend fun asegurarTabla() {
         runCatching {

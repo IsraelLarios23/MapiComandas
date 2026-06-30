@@ -276,18 +276,40 @@ fun ConfigScreen(
                     modifier = Modifier.weight(1f), singleLine = true
                 )
             }
-            OutlinedButton(
-                onClick = { viewModel.guardarNetPay() },
-                enabled = !uiState.npGuardando,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                if (uiState.npGuardando) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp))
-                } else {
-                    Icon(Icons.Default.Save, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (uiState.npGuardado) "NetPay guardado ✓" else "Guardar NetPay")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { viewModel.probarNetPay() },
+                    enabled = !uiState.npProbando,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (uiState.npProbando) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                    } else {
+                        Icon(Icons.Default.Link, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Probar")
+                    }
                 }
+                OutlinedButton(
+                    onClick = { viewModel.guardarNetPay() },
+                    enabled = !uiState.npGuardando,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (uiState.npGuardando) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                    } else {
+                        Icon(Icons.Default.Save, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (uiState.npGuardado) "Guardado ✓" else "Guardar")
+                    }
+                }
+            }
+            uiState.npResultadoPrueba?.let { res ->
+                Text(
+                    res,
+                    color = if (res.startsWith("✅")) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp
+                )
             }
 
             Spacer(Modifier.height(8.dp))

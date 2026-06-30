@@ -26,15 +26,17 @@ data class ConfigUiState(
     val ssl: String = "off",
     val impresoraTicket: String = "",
     val fastFood: Boolean = false,
-    // NetPay
+    // NetPay (valores de prueba MapiPOS por defecto)
     val npBaseUrl: String = "https://suite.netpay.com.mx",
     val npAuthString: String = "",
-    val npUsername: String = "",
-    val npPassword: String = "",
+    val npUsername: String = "Nacional",
+    val npPassword: String = "netpay",
     val npSerial: String = "",
-    val npStoreId: String = "",
+    val npStoreId: String = "9194",
     val npGuardando: Boolean = false,
     val npGuardado: Boolean = false,
+    val npProbando: Boolean = false,
+    val npResultadoPrueba: String? = null,
     val probando: Boolean = false,
     val conectado: Boolean = false,
     val error: String? = null
@@ -49,7 +51,8 @@ class ConfigViewModel @Inject constructor(
     private val session: SessionManager,
     private val db: JdbcDataSource,
     private val repo: com.example.mapicomandas.data.repository.RestauranteRepository,
-    private val configService: com.example.mapicomandas.data.ConfigService
+    private val configService: com.example.mapicomandas.data.ConfigService,
+    private val netPayService: com.example.mapicomandas.data.netpay.NetPayService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(cargarEstadoInicial())
@@ -62,16 +65,44 @@ class ConfigViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 configService.cargar()
-                _uiState.value = _uiState.value.copy(
-                    npBaseUrl = configService.texto("NetPayBaseUrl", "https://suite.netpay.com.mx"),
-                    npAuthString = configService.texto("NetPayAuthString"),
-                    npUsername = configService.texto("NetPayUsername"),
-                    npPassword = configService.texto("NetPayPassword"),
-                    npSerial = configService.texto("NetPaySerialNumber"),
-                    npStoreId = configService.texto("NetPayStoreId")
+                val s = _uiState.value
+                // Solo sobrescribe con lo de BD si tiene valor; mantiene defaults de prueba
+                suspend fun pick(clave: String, actual: String) =
+                    configService.texto(clave).ifBlank { actual }
+                _uiState.value = s.copy(
+                    npBaseUrl = pick("NetPayBaseUrl", s.npBaseUrl),
+                    npAuthString = pick("NetPayAuthString", s.npAuthString),
+                    npUsername = pick("NetPayUsername", s.npUsername),
+                    npPassword = pick("NetPayPassword", s.npPassword),
+                    npSerial = pick("NetPaySerialNumber", s.npSerial),
+                    npStoreId = pick("NetPayStoreId", s.npStoreId)
                 )
             }
         }
+    }
+
+    fun probarNetPay() {
+        val s = _uiState.value
+        _uiState.value = s.copy(npProbando = true, npResultadoPrueba = null)
+        viewModelScope.launch {
+            val cfg = com.example.mapicomandas.data.netpay.NetPayConfig(
+                baseUrl = s.npBaseUrl.trim(),
+                authString = s.npAuthString.trim(),
+                username = s.npUsername.trim(),
+                password = s.npPassword,
+                serialNumber = s.npSerial.trim(),
+                storeId = s.npStoreId.trim()
+            )
+            val error = netPayService.probarCredenciales(cfg)
+            _uiState.value = _uiState.value.copy(
+                npProbando = false,
+                npResultadoPrueba = error ?: "✅ Token OAuth obtenido — credenciales válidas"
+            )
+        }
+    }
+
+    fun limpiarResultadoNetPay() {
+        _uiState.value = _uiState.value.copy(npResultadoPrueba = null)
     }
 
     fun setNpBaseUrl(v: String) { _uiState.value = _uiState.value.copy(npBaseUrl = v) }
