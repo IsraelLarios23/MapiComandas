@@ -11,7 +11,9 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.text.KeyboardActions
@@ -31,7 +33,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.mapicomandas.data.model.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ComandaScreen(
     onVolver: () -> Unit,
@@ -132,23 +134,24 @@ fun ComandaScreen(
                     }
                 }
 
-                // Categorías — botones GRANDES (color + foto personalizables)
-                LazyRow(
+                // Categorías — varias filas (FlowRow) con botones medianos
+                androidx.compose.foundation.layout.FlowRow(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(max = 184.dp)
+                        .verticalScroll(rememberScrollState())
                         .padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    item {
-                        BotonCategoria(
-                            nombre = "Todos",
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            imagenBase64 = null,
-                            seleccionada = uiState.categoriaSeleccionada == null,
-                            onClick = { viewModel.seleccionarCategoria(null) }
-                        )
-                    }
-                    itemsIndexed(uiState.categorias) { idx, cat ->
+                    BotonCategoria(
+                        nombre = "Todos",
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        imagenBase64 = null,
+                        seleccionada = uiState.categoriaSeleccionada == null,
+                        onClick = { viewModel.seleccionarCategoria(null) }
+                    )
+                    uiState.categorias.forEachIndexed { idx, cat ->
                         BotonCategoria(
                             nombre = cat.nombre,
                             color = cat.colorBoton?.let { Color(it) } ?: paletaCategoria(idx),
@@ -309,16 +312,16 @@ fun BotonCategoria(
     val bitmap = remember(imagenBase64) { decodeBase64Bitmap(imagenBase64) }
     Card(
         modifier = Modifier
-            .width(132.dp)
-            .height(78.dp)
+            .width(104.dp)
+            .height(54.dp)
             .then(
-                if (seleccionada) Modifier.border(3.dp, Color.Black, RoundedCornerShape(10.dp))
+                if (seleccionada) Modifier.border(2.5.dp, Color.Black, RoundedCornerShape(8.dp))
                 else Modifier
             )
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = color),
-        elevation = CardDefaults.cardElevation(if (seleccionada) 6.dp else 3.dp)
+        elevation = CardDefaults.cardElevation(if (seleccionada) 6.dp else 2.dp)
     ) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             bitmap?.let {
@@ -331,13 +334,13 @@ fun BotonCategoria(
             }
             Text(
                 text = nombre,
-                fontSize = 15.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                modifier = Modifier.padding(6.dp)
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
             )
         }
     }
