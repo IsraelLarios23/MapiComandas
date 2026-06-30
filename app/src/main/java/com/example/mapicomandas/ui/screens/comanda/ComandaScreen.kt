@@ -1,15 +1,19 @@
 package com.example.mapicomandas.ui.screens.comanda
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -128,36 +132,36 @@ fun ComandaScreen(
                     }
                 }
 
-                // Categorías
+                // Categorías — botones GRANDES (color + foto personalizables)
                 LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     item {
-                        FilterChip(
-                            selected = uiState.categoriaSeleccionada == null,
-                            onClick = { viewModel.seleccionarCategoria(null) },
-                            label = { Text("Todos") }
+                        BotonCategoria(
+                            nombre = "Todos",
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            imagenBase64 = null,
+                            seleccionada = uiState.categoriaSeleccionada == null,
+                            onClick = { viewModel.seleccionarCategoria(null) }
                         )
                     }
-                    items(uiState.categorias) { cat ->
-                        FilterChip(
-                            selected = uiState.categoriaSeleccionada == cat.idCategoria,
-                            onClick = { viewModel.seleccionarCategoria(cat.idCategoria) },
-                            label = { Text(cat.nombre) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = cat.colorBoton?.let { Color(it) }
-                                    ?: MaterialTheme.colorScheme.surface
-                            )
+                    itemsIndexed(uiState.categorias) { idx, cat ->
+                        BotonCategoria(
+                            nombre = cat.nombre,
+                            color = cat.colorBoton?.let { Color(it) } ?: paletaCategoria(idx),
+                            imagenBase64 = cat.imagenBase64,
+                            seleccionada = uiState.categoriaSeleccionada == cat.idCategoria,
+                            onClick = { viewModel.seleccionarCategoria(cat.idCategoria) }
                         )
                     }
                 }
 
-                // Grid de artículos
+                // Grid de artículos — botones más compactos
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 110.dp),
+                    columns = GridCells.Adaptive(minSize = 92.dp),
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(8.dp),
@@ -277,10 +281,73 @@ fun ComandaScreen(
     }
 }
 
+// Paleta de respaldo para categorías sin color (estilo MapiPOS)
+private val PALETA_CATEGORIA = listOf(
+    Color(0xFFE57373), Color(0xFF64B5F6), Color(0xFF81C784), Color(0xFFFFB74D),
+    Color(0xFFBA68C8), Color(0xFF4DB6AC), Color(0xFFF06292), Color(0xFF9575CD),
+    Color(0xFF4FC3F7), Color(0xFFAED581), Color(0xFFFF8A65), Color(0xFF7986CB)
+)
+fun paletaCategoria(idx: Int): Color = PALETA_CATEGORIA[idx % PALETA_CATEGORIA.size]
+
+fun decodeBase64Bitmap(b64: String?): androidx.compose.ui.graphics.ImageBitmap? {
+    if (b64.isNullOrBlank()) return null
+    return runCatching {
+        val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            ?.asImageBitmap()
+    }.getOrNull()
+}
+
+@Composable
+fun BotonCategoria(
+    nombre: String,
+    color: Color,
+    imagenBase64: String?,
+    seleccionada: Boolean,
+    onClick: () -> Unit
+) {
+    val bitmap = remember(imagenBase64) { decodeBase64Bitmap(imagenBase64) }
+    Card(
+        modifier = Modifier
+            .width(132.dp)
+            .height(78.dp)
+            .then(
+                if (seleccionada) Modifier.border(3.dp, Color.Black, RoundedCornerShape(10.dp))
+                else Modifier
+            )
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = color),
+        elevation = CardDefaults.cardElevation(if (seleccionada) 6.dp else 3.dp)
+    ) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            bitmap?.let {
+                androidx.compose.foundation.Image(
+                    bitmap = it,
+                    contentDescription = nombre,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().alpha(0.5f)
+                )
+            }
+            Text(
+                text = nombre,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.padding(6.dp)
+            )
+        }
+    }
+}
+
 @Composable
 fun BotonArticulo(articulo: Articulo, onClick: () -> Unit) {
     val colorFondo = articulo.colorBoton?.let { Color(it) }
         ?: MaterialTheme.colorScheme.primaryContainer
+    val bitmap = remember(articulo.imagenBase64) { decodeBase64Bitmap(articulo.imagenBase64) }
 
     Card(
         modifier = Modifier
@@ -289,29 +356,41 @@ fun BotonArticulo(articulo: Articulo, onClick: () -> Unit) {
         colors = CardDefaults.cardColors(containerColor = colorFondo),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            if (articulo.esKit) {
-                Icon(Icons.Default.ViewModule, null, modifier = Modifier.size(20.dp))
+        Box(modifier = Modifier.fillMaxSize()) {
+            bitmap?.let {
+                androidx.compose.foundation.Image(
+                    bitmap = it,
+                    contentDescription = articulo.nombre,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().alpha(0.55f)
+                )
             }
-            Text(
-                text = articulo.nombre,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                color = Color.Black
-            )
-            Text(
-                text = "$${String.format("%.2f", articulo.precioVenta)}",
-                fontSize = 11.sp,
-                color = Color.DarkGray
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(5.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                if (articulo.esKit) {
+                    Icon(Icons.Default.ViewModule, null, modifier = Modifier.size(18.dp))
+                }
+                Text(
+                    text = articulo.nombre,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color.Black,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                Text(
+                    text = "$${String.format("%.2f", articulo.precioVenta)}",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.DarkGray
+                )
+            }
         }
     }
 }

@@ -728,14 +728,23 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             ) AS PrecioResuelto
         """.trimIndent()
 
+        // Foto del botón: tabla ArticulosImagenes (si existe)
+        val tieneImgs = db.queryOne(
+            "SELECT CASE WHEN OBJECT_ID('dbo.ArticulosImagenes') IS NOT NULL THEN 1 ELSE 0 END AS E",
+            emptyList()
+        ) { rs -> rs.getInt("E") } == 1
+        val joinImg = if (tieneImgs) "LEFT JOIN dbo.ArticulosImagenes ai ON ai.IdArticulo = a.IdArticulo" else ""
+        val selImg = if (tieneImgs) ", ai.Imagen AS Imagen" else ""
+
         val where = mutableListOf("ISNULL(a.Activo,1)=1")
         val params = mutableListOf<Any?>(session.idCaja)   // para el subquery de la lista de caja
         if (idCategoria != null) { where.add("a.IdCategoria=?"); params.add(idCategoria) }
         if (clave != null) { where.add("(a.Clave=? OR a.CodigoBarras=?)"); params.addAll(listOf(clave, clave)) }
         if (nombre != null) { where.add("a.Nombre LIKE ?"); params.add("%$nombre%") }
         val sql = """
-            SELECT a.*, $precioExpr
+            SELECT a.*, $precioExpr$selImg
             FROM dbo.Articulos a
+            $joinImg
             WHERE ${where.joinToString(" AND ")}
             ORDER BY a.Nombre
         """.trimIndent()
@@ -751,7 +760,7 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
                 nombre = rs.getString("Nombre"),
                 activo = rs.optBoolean("Activo", true),
                 colorBoton = rs.optInt("ColorBoton"),
-                imagenBase64 = null
+                imagenBase64 = rs.optImagenBase64("Imagen")
             )
         }
 
@@ -1266,6 +1275,12 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
     private fun ResultSet.optBoolean(name: String, def: Boolean = false) = if (hasCol(name)) getBoolean(name) else def
     private fun ResultSet.optString(name: String): String? = if (hasCol(name)) getString(name) else null
     private fun ResultSet.optInt(name: String): Int? = if (hasCol(name)) getObject(name) as? Int else null
+    private fun ResultSet.optImagenBase64(name: String): String? {
+        if (!hasCol(name)) return null
+        val bytes = getBytes(name) ?: return null
+        if (bytes.isEmpty()) return null
+        return android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+    }
 
     private fun ResultSet.toArticulo() = Articulo(
         idArticulo = getInt("IdArticulo"),
@@ -1286,7 +1301,8 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         precioIncluyeImpuesto = optBoolean("PrecioIncluyeImpuesto"),
         iepsTipoFactor = optString("IepsTipoFactor"),
         iepsCuota = optDouble("IepsCuota"),
-        tasaIva = optDouble("TasaIVA", 0.16)
+        tasaIva = optDouble("TasaIVA", 0.16),
+        imagenBase64 = optImagenBase64("Imagen")
     )
 
     private fun ResultSet.toPlatilloKds() = PlatilloKds(
