@@ -18,15 +18,13 @@ class JdbcDataSource @Inject constructor(
 
     private fun buildUrl(): String {
         val cfg = session.dbConfig
-        // encrypt=false evita el handshake TLS que falla en Android con mssql-jdbc
-        // (AssertionError numMsgsRcvd/numMsgsSent). Para LAN/on-premise es lo correcto.
-        return "jdbc:sqlserver://${cfg.host}:${cfg.puerto};" +
-                "databaseName=${cfg.baseDatos};" +
+        // jTDS: driver de SQL Server compatible con Android (mssql-jdbc falla con
+        // AssertionError en el handshake TLS). Formato jdbc:jtds:sqlserver://host:port/db
+        return "jdbc:jtds:sqlserver://${cfg.host}:${cfg.puerto}/${cfg.baseDatos};" +
                 "user=${cfg.usuario};" +
                 "password=${cfg.password};" +
-                "encrypt=false;" +
-                "trustServerCertificate=true;" +
-                "loginTimeout=30;"
+                "loginTimeout=30;" +
+                "socketTimeout=60;"
     }
 
     suspend fun getConnection(): Connection = withContext(Dispatchers.IO) {
@@ -34,7 +32,7 @@ class JdbcDataSource @Inject constructor(
         if (conn != null && !conn.isClosed) return@withContext conn
         try {
             // Registrar el driver explícitamente (Android no usa ServiceLoader de JDBC)
-            val driver = Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver")
+            val driver = Class.forName("net.sourceforge.jtds.jdbc.Driver")
                 .getDeclaredConstructor().newInstance() as java.sql.Driver
             DriverManager.registerDriver(driver)
             val newConn = DriverManager.getConnection(buildUrl())

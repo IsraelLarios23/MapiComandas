@@ -86,8 +86,8 @@ dependencies {
     // Fuerza javapoet 1.13.0 en kapt — evita NoSuchMethod ClassName.canonicalName()
     kapt("com.squareup:javapoet:1.13.0")
 
-    // Microsoft JDBC Driver para SQL Server (jre8 = compatible Android)
-    implementation(libs.mssql.jdbc)
+    // jTDS Driver para SQL Server (compatible con Android)
+    implementation(libs.jtds)
 
     // Room — compilador con ksp
     implementation(libs.room.runtime)
