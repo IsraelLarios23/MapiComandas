@@ -149,14 +149,14 @@ fun CajaScreen(
                         icono = Icons.Default.AddCircle,
                         color = Color(0xFF4CAF50),
                         modifier = Modifier.weight(1f),
-                        onClick = { viewModel.setMostrarMovimiento(true) }
+                        onClick = { viewModel.abrirMovimiento("I") }
                     )
                     BotonCaja(
                         texto = "Retiro",
                         icono = Icons.Default.RemoveCircle,
                         color = Color(0xFFF44336),
                         modifier = Modifier.weight(1f),
-                        onClick = { viewModel.setMostrarMovimiento(true) }
+                        onClick = { viewModel.abrirMovimiento("R") }
                     )
                 }
             }
@@ -188,6 +188,7 @@ fun CajaScreen(
     // Diálogo movimiento de caja
     if (uiState.mostrarMovimiento) {
         DialogoMovimientoCaja(
+            tipoInicial = uiState.tipoMovimientoInicial,
             onConfirmar = { tipo, concepto, importe ->
                 viewModel.registrarMovimiento(tipo, concepto, importe)
             },
@@ -251,10 +252,11 @@ fun BotonCaja(
 
 @Composable
 fun DialogoMovimientoCaja(
+    tipoInicial: String = "I",
     onConfirmar: (String, String, Double) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var tipo by remember { mutableStateOf("I") }
+    var tipo by remember { mutableStateOf(tipoInicial) }
     var concepto by remember { mutableStateOf("") }
     var importe by remember { mutableStateOf("") }
 

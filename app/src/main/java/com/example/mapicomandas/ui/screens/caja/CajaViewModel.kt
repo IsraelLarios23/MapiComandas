@@ -18,6 +18,7 @@ data class CajaUiState(
     val error: String? = null,
     val exito: String? = null,
     val mostrarMovimiento: Boolean = false,
+    val tipoMovimientoInicial: String = "I",   // "I" = ingreso, "R" = retiro
     val mostrarCorteZ: Boolean = false
 )
 
@@ -114,6 +115,10 @@ class CajaViewModel @Inject constructor(
 
     fun setMostrarMovimiento(mostrar: Boolean) {
         _uiState.value = _uiState.value.copy(mostrarMovimiento = mostrar)
+    }
+
+    fun abrirMovimiento(tipo: String) {
+        _uiState.value = _uiState.value.copy(mostrarMovimiento = true, tipoMovimientoInicial = tipo)
     }
 
     fun setMostrarCorteZ(mostrar: Boolean) {
