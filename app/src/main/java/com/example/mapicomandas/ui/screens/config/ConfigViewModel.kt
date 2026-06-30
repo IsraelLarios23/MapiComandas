@@ -27,8 +27,10 @@ data class ConfigUiState(
     val impresoraTicket: String = "",
     val fastFood: Boolean = false,
     // NetPay (valores de prueba MapiPOS por defecto)
-    val npBaseUrl: String = "https://suite.netpay.com.mx",
-    val npAuthString: String = "",
+    val npBaseUrl: String = "https://api-154.api-netpay.com",
+    val npOAuthPath: String = "/oauth/token",
+    val npSalePath: String = "/gateway/integration-service/transactions/sale",
+    val npAuthString: String = "dHJ1c3RlZC1hcHA6c2VjcmV0",
     val npUsername: String = "Nacional",
     val npPassword: String = "netpay",
     val npSerial: String = "",
@@ -71,6 +73,8 @@ class ConfigViewModel @Inject constructor(
                     configService.texto(clave).ifBlank { actual }
                 _uiState.value = s.copy(
                     npBaseUrl = pick("NetPayBaseUrl", s.npBaseUrl),
+                    npOAuthPath = pick("NetPayOAuthPath", s.npOAuthPath),
+                    npSalePath = pick("NetPaySalePath", s.npSalePath),
                     npAuthString = pick("NetPayAuthString", s.npAuthString),
                     npUsername = pick("NetPayUsername", s.npUsername),
                     npPassword = pick("NetPayPassword", s.npPassword),
@@ -87,6 +91,8 @@ class ConfigViewModel @Inject constructor(
         viewModelScope.launch {
             val cfg = com.example.mapicomandas.data.netpay.NetPayConfig(
                 baseUrl = s.npBaseUrl.trim(),
+                oauthPath = s.npOAuthPath.trim(),
+                salePath = s.npSalePath.trim(),
                 authString = s.npAuthString.trim(),
                 username = s.npUsername.trim(),
                 password = s.npPassword,
@@ -106,6 +112,8 @@ class ConfigViewModel @Inject constructor(
     }
 
     fun setNpBaseUrl(v: String) { _uiState.value = _uiState.value.copy(npBaseUrl = v) }
+    fun setNpOAuthPath(v: String) { _uiState.value = _uiState.value.copy(npOAuthPath = v) }
+    fun setNpSalePath(v: String) { _uiState.value = _uiState.value.copy(npSalePath = v) }
     fun setNpAuthString(v: String) { _uiState.value = _uiState.value.copy(npAuthString = v) }
     fun setNpUsername(v: String) { _uiState.value = _uiState.value.copy(npUsername = v) }
     fun setNpPassword(v: String) { _uiState.value = _uiState.value.copy(npPassword = v) }
@@ -118,6 +126,8 @@ class ConfigViewModel @Inject constructor(
         viewModelScope.launch {
             val r = runCatching {
                 repo.guardarConfig("NetPayBaseUrl", s.npBaseUrl.trim())
+                repo.guardarConfig("NetPayOAuthPath", s.npOAuthPath.trim())
+                repo.guardarConfig("NetPaySalePath", s.npSalePath.trim())
                 repo.guardarConfig("NetPayAuthString", s.npAuthString.trim())
                 repo.guardarConfig("NetPayUsername", s.npUsername.trim())
                 repo.guardarConfig("NetPayPassword", s.npPassword)

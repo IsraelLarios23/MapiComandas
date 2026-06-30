@@ -33,7 +33,7 @@ class NetPayService @Inject constructor(
     suspend fun obtenerConfig(): NetPayConfig {
         config.cargar()
         return NetPayConfig(
-            baseUrl = config.texto("NetPayBaseUrl", "https://suite.netpay.com.mx"),
+            baseUrl = config.texto("NetPayBaseUrl", "https://api-154.api-netpay.com"),
             oauthPath = config.texto("NetPayOAuthPath", "/gateway/oauth-service/oauth/token"),
             salePath = config.texto("NetPaySalePath", "/gateway/integration-service/transactions/sale"),
             authString = config.texto("NetPayAuthString"),

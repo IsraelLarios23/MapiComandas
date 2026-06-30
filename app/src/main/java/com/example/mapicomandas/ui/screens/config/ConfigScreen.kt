@@ -247,7 +247,17 @@ fun ConfigScreen(
             Text("Terminal NetPay", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             OutlinedTextField(
                 value = uiState.npBaseUrl, onValueChange = viewModel::setNpBaseUrl,
-                label = { Text("Base URL") }, placeholder = { Text("https://suite.netpay.com.mx") },
+                label = { Text("Base URL") }, placeholder = { Text("https://api-154.api-netpay.com") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true
+            )
+            OutlinedTextField(
+                value = uiState.npOAuthPath, onValueChange = viewModel::setNpOAuthPath,
+                label = { Text("Ruta OAuth token") }, placeholder = { Text("/oauth/token") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true
+            )
+            OutlinedTextField(
+                value = uiState.npSalePath, onValueChange = viewModel::setNpSalePath,
+                label = { Text("Ruta venta (sale)") },
                 modifier = Modifier.fillMaxWidth(), singleLine = true
             )
             OutlinedTextField(

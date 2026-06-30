@@ -2,7 +2,7 @@ package com.example.mapicomandas.data.netpay
 
 /** Configuración del cliente Smart de NetPay (leída de ConfiguracionSistema). */
 data class NetPayConfig(
-    val baseUrl: String = "https://suite.netpay.com.mx",
+    val baseUrl: String = "https://api-154.api-netpay.com",
     val oauthPath: String = "/gateway/oauth-service/oauth/token",
     val salePath: String = "/gateway/integration-service/transactions/sale",
     val authString: String = "",   // Basic <base64> sin el prefijo "Basic "
