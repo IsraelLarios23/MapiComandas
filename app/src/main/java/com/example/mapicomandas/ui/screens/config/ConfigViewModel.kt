@@ -22,10 +22,15 @@ data class ConfigUiState(
     val idTienda: String = "1",
     val idCaja: String = "1",
     val idAlmacen: String = "1",
+    val ssl: String = "off",
     val probando: Boolean = false,
     val conectado: Boolean = false,
     val error: String? = null
-)
+) {
+    companion object {
+        val OPCIONES_SSL = listOf("off", "request", "require", "authenticate")
+    }
+}
 
 @HiltViewModel
 class ConfigViewModel @Inject constructor(
@@ -46,7 +51,8 @@ class ConfigViewModel @Inject constructor(
             password = cfg.password,
             idTienda = session.idTienda.toString(),
             idCaja = session.idCaja.toString(),
-            idAlmacen = session.idAlmacen.toString()
+            idAlmacen = session.idAlmacen.toString(),
+            ssl = cfg.ssl
         )
     }
 
@@ -58,6 +64,7 @@ class ConfigViewModel @Inject constructor(
     fun setIdTienda(v: String) { _uiState.value = _uiState.value.copy(idTienda = v) }
     fun setIdCaja(v: String) { _uiState.value = _uiState.value.copy(idCaja = v) }
     fun setIdAlmacen(v: String) { _uiState.value = _uiState.value.copy(idAlmacen = v) }
+    fun setSsl(v: String) { _uiState.value = _uiState.value.copy(ssl = v) }
 
     fun probarYGuardar() {
         val s = _uiState.value
@@ -73,7 +80,8 @@ class ConfigViewModel @Inject constructor(
                 puerto = s.puerto.toIntOrNull() ?: 1433,
                 baseDatos = s.baseDatos.trim(),
                 usuario = s.usuario.trim(),
-                password = s.password
+                password = s.password,
+                ssl = s.ssl
             )
             // Guardar primero para que JdbcDataSource use la nueva config
             session.guardarDbConfig(

@@ -14,7 +14,8 @@ data class DbConfig(
     val puerto: Int = 1433,
     val baseDatos: String = "",
     val usuario: String = "",
-    val password: String = ""
+    val password: String = "",
+    val ssl: String = "off"   // jTDS: off | request | require | authenticate
 )
 
 data class Sesion(
@@ -60,7 +61,8 @@ class SessionManager @Inject constructor(
             puerto = prefs.getInt("dbPuerto", 1433),
             baseDatos = prefs.getString("dbNombre", "") ?: "",
             usuario = prefs.getString("dbUsuario", "") ?: "",
-            password = prefs.getString("dbPassword", "") ?: ""
+            password = prefs.getString("dbPassword", "") ?: "",
+            ssl = prefs.getString("dbSsl", "off") ?: "off"
         )
     )
 
@@ -71,6 +73,7 @@ class SessionManager @Inject constructor(
             .putString("dbNombre", config.baseDatos)
             .putString("dbUsuario", config.usuario)
             .putString("dbPassword", config.password)
+            .putString("dbSsl", config.ssl)
             .putInt("idTienda", idTienda)
             .putInt("idCaja", idCaja)
             .putInt("idAlmacen", idAlmacen)

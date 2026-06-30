@@ -20,9 +20,11 @@ class JdbcDataSource @Inject constructor(
         val cfg = session.dbConfig
         // jTDS: driver de SQL Server compatible con Android (mssql-jdbc falla con
         // AssertionError en el handshake TLS). Formato jdbc:jtds:sqlserver://host:port/db
+        val ssl = if (cfg.ssl.isNotBlank() && cfg.ssl != "off") "ssl=${cfg.ssl};" else ""
         return "jdbc:jtds:sqlserver://${cfg.host}:${cfg.puerto}/${cfg.baseDatos};" +
                 "user=${cfg.usuario};" +
                 "password=${cfg.password};" +
+                ssl +
                 "loginTimeout=30;" +
                 "socketTimeout=60;"
     }

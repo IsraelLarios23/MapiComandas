@@ -126,6 +126,42 @@ fun ConfigScreen(
                 singleLine = true
             )
 
+            // Selector de modo SSL (jTDS)
+            var expandedSsl by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(
+                expanded = expandedSsl,
+                onExpandedChange = { expandedSsl = it }
+            ) {
+                OutlinedTextField(
+                    value = uiState.ssl,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Modo SSL") },
+                    leadingIcon = { Icon(Icons.Default.Security, null) },
+                    supportingText = {
+                        Text("off = sin cifrado · require = exige SSL · request = usa SSL si está disponible")
+                    },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedSsl) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor()
+                )
+                ExposedDropdownMenu(
+                    expanded = expandedSsl,
+                    onDismissRequest = { expandedSsl = false }
+                ) {
+                    ConfigUiState.OPCIONES_SSL.forEach { opcion ->
+                        DropdownMenuItem(
+                            text = { Text(opcion) },
+                            onClick = {
+                                viewModel.setSsl(opcion)
+                                expandedSsl = false
+                            }
+                        )
+                    }
+                }
+            }
+
             Divider()
 
             Text("Configuración de la caja", fontWeight = FontWeight.Bold, fontSize = 16.sp)
