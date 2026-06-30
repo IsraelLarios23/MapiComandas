@@ -615,15 +615,14 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
     // ─────────────────────────────────────────────────────────────────────────
 
     override suspend fun obtenerArticulos(idCategoria: Int?, clave: String?, nombre: String?): List<Articulo> {
-        val where = mutableListOf("a.EsInsumo=0")
+        val where = mutableListOf("ISNULL(a.Activo,1)=1")
         val params = mutableListOf<Any?>()
         if (idCategoria != null) { where.add("a.IdCategoria=?"); params.add(idCategoria) }
-        if (clave != null) { where.add("(a.Clave=? OR a.CodigoBarras=? OR EXISTS (SELECT 1 FROM dbo.ArticulosCodigosEquivalentes ce WHERE ce.IdArticulo=a.IdArticulo AND ce.CodigoEquivalente=? AND ce.Activo=1))"); params.addAll(listOf(clave, clave, clave)) }
+        if (clave != null) { where.add("(a.Clave=? OR a.CodigoBarras=?)"); params.addAll(listOf(clave, clave)) }
         if (nombre != null) { where.add("a.Nombre LIKE ?"); params.add("%$nombre%") }
         val sql = """
-            SELECT a.*, ISNULL(ai.Imagen, NULL) AS Imagen
+            SELECT a.*
             FROM dbo.Articulos a
-            LEFT JOIN dbo.ArticulosImagenes ai ON ai.IdArticulo = a.IdArticulo
             WHERE ${where.joinToString(" AND ")}
             ORDER BY a.Nombre
         """.trimIndent()
@@ -632,13 +631,13 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
 
     override suspend fun obtenerCategorias(): List<Categoria> =
         db.query(
-            "SELECT IdCategoria,Nombre,Activo,ColorBoton FROM dbo.Categorias WHERE Activo=1 ORDER BY Nombre"
+            "SELECT * FROM dbo.Categorias WHERE ISNULL(Activo,1)=1 ORDER BY Nombre"
         ) { rs ->
             Categoria(
                 idCategoria = rs.getInt("IdCategoria"),
                 nombre = rs.getString("Nombre"),
-                activo = rs.getBoolean("Activo"),
-                colorBoton = rs.getObject("ColorBoton") as? Int,
+                activo = rs.optBoolean("Activo", true),
+                colorBoton = rs.optInt("ColorBoton"),
                 imagenBase64 = null
             )
         }
@@ -1005,26 +1004,34 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         nombreSnapshot = getString("NombreSnapshot") ?: ""
     )
 
+    // Accesores opcionales: devuelven default si la columna no existe en el ResultSet
+    private fun ResultSet.hasCol(name: String): Boolean =
+        try { findColumn(name); true } catch (e: java.sql.SQLException) { false }
+    private fun ResultSet.optDouble(name: String, def: Double = 0.0) = if (hasCol(name)) getDouble(name) else def
+    private fun ResultSet.optBoolean(name: String, def: Boolean = false) = if (hasCol(name)) getBoolean(name) else def
+    private fun ResultSet.optString(name: String): String? = if (hasCol(name)) getString(name) else null
+    private fun ResultSet.optInt(name: String): Int? = if (hasCol(name)) getObject(name) as? Int else null
+
     private fun ResultSet.toArticulo() = Articulo(
         idArticulo = getInt("IdArticulo"),
-        clave = getString("Clave") ?: "",
+        clave = optString("Clave") ?: "",
         nombre = getString("Nombre"),
-        precioVenta = getDouble("PrecioVenta"),
-        costo = getDouble("Costo"),
-        idCategoria = getInt("IdCategoria"),
-        codigoBarras = getString("CodigoBarras"),
-        esPlatillo = getBoolean("EsPlatillo"),
-        esKit = getBoolean("EsKit"),
-        esInsumo = getBoolean("EsInsumo"),
-        manejaInventario = getBoolean("ManejaInventario"),
-        colorBoton = getObject("ColorBoton") as? Int,
-        idPuntoImpresion = getObject("IdPuntoImpresion") as? Int,
-        tasaIEPS = getDouble("TasaIEPS"),
-        exento = getBoolean("Exento"),
-        precioIncluyeImpuesto = getBoolean("PrecioIncluyeImpuesto"),
-        iepsTipoFactor = getString("IepsTipoFactor"),
-        iepsCuota = getDouble("IepsCuota"),
-        tasaIva = 0.16
+        precioVenta = optDouble("PrecioVenta"),
+        costo = optDouble("Costo"),
+        idCategoria = optInt("IdCategoria") ?: 0,
+        codigoBarras = optString("CodigoBarras"),
+        esPlatillo = optBoolean("EsPlatillo"),
+        esKit = optBoolean("EsKit"),
+        esInsumo = optBoolean("EsInsumo"),
+        manejaInventario = optBoolean("ManejaInventario"),
+        colorBoton = optInt("ColorBoton"),
+        idPuntoImpresion = optInt("IdPuntoImpresion"),
+        tasaIEPS = optDouble("TasaIEPS"),
+        exento = optBoolean("Exento"),
+        precioIncluyeImpuesto = optBoolean("PrecioIncluyeImpuesto"),
+        iepsTipoFactor = optString("IepsTipoFactor"),
+        iepsCuota = optDouble("IepsCuota"),
+        tasaIva = optDouble("TasaIVA", 0.16)
     )
 
     private fun ResultSet.toPlatilloKds() = PlatilloKds(
