@@ -172,6 +172,17 @@ fun ConfigScreen(
                 }
             }
 
+            OutlinedTextField(
+                value = uiState.impresoraTicket,
+                onValueChange = viewModel::setImpresoraTicket,
+                label = { Text("Impresora de tickets (IP:puerto)") },
+                placeholder = { Text("192.168.1.200:9100") },
+                leadingIcon = { Icon(Icons.Default.Print, null) },
+                supportingText = { Text("Impresora ESC/POS de red. Vacío = solo vista previa.") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
             Divider()
 
             Text("Configuración de la caja", fontWeight = FontWeight.Bold, fontSize = 16.sp)

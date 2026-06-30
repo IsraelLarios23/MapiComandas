@@ -15,7 +15,8 @@ data class DbConfig(
     val baseDatos: String = "",
     val usuario: String = "",
     val password: String = "",
-    val ssl: String = "off"   // jTDS: off | request | require | authenticate
+    val ssl: String = "off",   // jTDS: off | request | require | authenticate
+    val impresoraTicket: String = ""   // IP o IP:puerto de la impresora ESC/POS
 )
 
 data class Sesion(
@@ -62,7 +63,8 @@ class SessionManager @Inject constructor(
             baseDatos = prefs.getString("dbNombre", "") ?: "",
             usuario = prefs.getString("dbUsuario", "") ?: "",
             password = prefs.getString("dbPassword", "") ?: "",
-            ssl = prefs.getString("dbSsl", "off") ?: "off"
+            ssl = prefs.getString("dbSsl", "off") ?: "off",
+            impresoraTicket = prefs.getString("impresoraTicket", "") ?: ""
         )
     )
 
@@ -74,6 +76,7 @@ class SessionManager @Inject constructor(
             .putString("dbUsuario", config.usuario)
             .putString("dbPassword", config.password)
             .putString("dbSsl", config.ssl)
+            .putString("impresoraTicket", config.impresoraTicket)
             .putInt("idTienda", idTienda)
             .putInt("idCaja", idCaja)
             .putInt("idAlmacen", idAlmacen)
@@ -126,4 +129,6 @@ class SessionManager @Inject constructor(
     val idUsuario get() = _sesion.value.idUsuario
     val cajaHabilitada get() = _sesion.value.cajaHabilitada
     val estaConfigurado get() = _sesion.value.dbConfig.host.isNotBlank()
+    val impresoraTicket get() = _sesion.value.dbConfig.impresoraTicket
+    val nombreUsuarioActual get() = _nombreUsuario.value
 }

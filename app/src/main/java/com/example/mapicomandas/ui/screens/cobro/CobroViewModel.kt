@@ -6,6 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.example.mapicomandas.SessionManager
 import com.example.mapicomandas.data.model.*
 import com.example.mapicomandas.data.repository.RestauranteRepository
+import com.example.mapicomandas.util.EscPosPrinter
+import com.example.mapicomandas.util.TicketData
+import com.example.mapicomandas.util.TicketFormatter
+import com.example.mapicomandas.util.TicketRenglon
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +29,11 @@ data class CobroUiState(
     val cargando: Boolean = false,
     val error: String? = null,
     val cobrado: Boolean = false,
+    // Ticket / finalizar
+    val ticketLineas: List<String> = emptyList(),
+    val imprimiendo: Boolean = false,
+    val mensajeImpresion: String? = null,
+    val finalizado: Boolean = false,
     // División de cuenta
     val modoDivision: ModoDivision = ModoDivision.NINGUNO,
     val partesDivision: Int = 1,
@@ -147,12 +156,65 @@ class CobroViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     idVentaGenerada = idVenta,
                     cargando = false,
-                    cobrado = true
+                    cobrado = true,
+                    ticketLineas = construirTicket(idVenta)
                 )
             } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(cargando = false, error = e.message)
             }
         }
+    }
+
+    private fun construirTicket(idVenta: Int): List<String> {
+        val s = _uiState.value
+        val comanda = s.comanda
+        val renglones = s.lineas
+            .filter { it.status != StatusLinea.CANCELADO }
+            .map { TicketRenglon(it.cantidad, it.nombreArticulo, it.total) }
+        val pagoTexto = s.pagos.joinToString(", ") { it.nombreFormaPago }
+        val totalConPropina = (comanda?.total ?: 0.0) + s.propinaIngresada
+        return TicketFormatter.construir(
+            TicketData(
+                folio = "T-${comanda?.folio ?: idVenta}",
+                fecha = fechaActual(),
+                caja = session.idCaja.toString(),
+                cajero = session.nombreUsuarioActual.ifBlank { session.idUsuario.toString() },
+                renglones = renglones,
+                subtotal = comanda?.subtotal ?: 0.0,
+                descuento = comanda?.descuento ?: 0.0,
+                impuesto = comanda?.iva ?: 0.0,
+                total = totalConPropina,
+                pagado = s.totalPagado,
+                cambio = s.cambio,
+                formaPago = pagoTexto,
+                observaciones = if (s.propinaIngresada > 0)
+                    "Propina: $${String.format(java.util.Locale.US, "%,.2f", s.propinaIngresada)}" else ""
+            )
+        )
+    }
+
+    private fun fechaActual(): String =
+        java.time.LocalDateTime.now()
+            .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
+
+    /** Dispara la impresión del ticket y marca la venta como finalizada. */
+    fun finalizar(imprimir: Boolean) {
+        val lineas = _uiState.value.ticketLineas
+        viewModelScope.launch {
+            if (imprimir && session.impresoraTicket.isNotBlank()) {
+                _uiState.value = _uiState.value.copy(imprimiendo = true)
+                val error = EscPosPrinter.imprimir(session.impresoraTicket, lineas)
+                _uiState.value = _uiState.value.copy(
+                    imprimiendo = false,
+                    mensajeImpresion = error ?: "Ticket impreso"
+                )
+            }
+            _uiState.value = _uiState.value.copy(finalizado = true)
+        }
+    }
+
+    fun limpiarMensajeImpresion() {
+        _uiState.value = _uiState.value.copy(mensajeImpresion = null)
     }
 
     fun setModoDivision(modo: ModoDivision) {

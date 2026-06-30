@@ -30,8 +30,8 @@ fun CobroScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    LaunchedEffect(uiState.cobrado) {
-        if (uiState.cobrado) onCobrado()
+    LaunchedEffect(uiState.finalizado) {
+        if (uiState.finalizado) onCobrado()
     }
 
     LaunchedEffect(uiState.error) {
@@ -39,6 +39,22 @@ fun CobroScreen(
             android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
             viewModel.limpiarError()
         }
+    }
+    LaunchedEffect(uiState.mensajeImpresion) {
+        uiState.mensajeImpresion?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.limpiarMensajeImpresion()
+        }
+    }
+
+    // Panel de venta cobrada: vista previa del ticket + Finalizar
+    if (uiState.cobrado) {
+        TicketFinalizarDialog(
+            ticketLineas = uiState.ticketLineas,
+            imprimiendo = uiState.imprimiendo,
+            onFinalizarImprimir = { viewModel.finalizar(imprimir = true) },
+            onFinalizarSinImprimir = { viewModel.finalizar(imprimir = false) }
+        )
     }
 
     Scaffold(
@@ -373,5 +389,70 @@ fun DialogoMontoPago(
             ) { Text("Aceptar") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
+}
+
+@Composable
+fun TicketFinalizarDialog(
+    ticketLineas: List<String>,
+    imprimiendo: Boolean,
+    onFinalizarImprimir: () -> Unit,
+    onFinalizarSinImprimir: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { /* obligar a finalizar */ },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF4CAF50))
+                Spacer(Modifier.width(8.dp))
+                Text("Venta cobrada")
+            }
+        },
+        text = {
+            Column {
+                Text("Vista previa del ticket:", fontSize = 13.sp, color = Color.Gray)
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    color = Color(0xFFF5F5F5),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp)
+                ) {
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        modifier = Modifier.padding(8.dp)
+                    ) {
+                        items(ticketLineas) { linea ->
+                            Text(
+                                text = linea,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = Color.Black,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onFinalizarImprimir,
+                enabled = !imprimiendo,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+            ) {
+                if (imprimiendo) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp))
+                } else {
+                    Icon(Icons.Default.Print, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Finalizar e imprimir")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onFinalizarSinImprimir, enabled = !imprimiendo) {
+                Text("Finalizar sin imprimir")
+            }
+        }
     )
 }

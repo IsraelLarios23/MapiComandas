@@ -24,6 +24,7 @@ data class ConfigUiState(
     val idCaja: String = "1",
     val idAlmacen: String = "1",
     val ssl: String = "off",
+    val impresoraTicket: String = "",
     val probando: Boolean = false,
     val conectado: Boolean = false,
     val error: String? = null
@@ -53,7 +54,8 @@ class ConfigViewModel @Inject constructor(
             idTienda = session.idTienda.toString(),
             idCaja = session.idCaja.toString(),
             idAlmacen = session.idAlmacen.toString(),
-            ssl = cfg.ssl
+            ssl = cfg.ssl,
+            impresoraTicket = cfg.impresoraTicket
         )
     }
 
@@ -66,6 +68,7 @@ class ConfigViewModel @Inject constructor(
     fun setIdCaja(v: String) { _uiState.value = _uiState.value.copy(idCaja = v) }
     fun setIdAlmacen(v: String) { _uiState.value = _uiState.value.copy(idAlmacen = v) }
     fun setSsl(v: String) { _uiState.value = _uiState.value.copy(ssl = v) }
+    fun setImpresoraTicket(v: String) { _uiState.value = _uiState.value.copy(impresoraTicket = v) }
 
     fun probarYGuardar() {
         val s = _uiState.value
@@ -82,7 +85,8 @@ class ConfigViewModel @Inject constructor(
                 baseDatos = s.baseDatos.trim(),
                 usuario = s.usuario.trim(),
                 password = s.password,
-                ssl = s.ssl
+                ssl = s.ssl,
+                impresoraTicket = s.impresoraTicket.trim()
             )
             // Guardar primero para que JdbcDataSource use la nueva config
             session.guardarDbConfig(
