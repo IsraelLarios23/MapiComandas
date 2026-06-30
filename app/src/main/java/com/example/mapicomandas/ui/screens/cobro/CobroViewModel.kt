@@ -34,6 +34,7 @@ data class CobroUiState(
     val imprimiendo: Boolean = false,
     val mensajeImpresion: String? = null,
     val finalizado: Boolean = false,
+    val nuevaComandaFastFood: Int? = null,   // id de la nueva comanda en modo fast food
     // División de cuenta
     val modoDivision: ModoDivision = ModoDivision.NINGUNO,
     val partesDivision: Int = 1,
@@ -210,7 +211,24 @@ class CobroViewModel @Inject constructor(
                     mensajeImpresion = error ?: "Ticket impreso"
                 )
             }
-            _uiState.value = _uiState.value.copy(finalizado = true)
+
+            // Modo Comida Rápida: si la comanda era PARA LLEVAR, abrir una nueva sin cerrar la ventana
+            val esParaLlevar = _uiState.value.comanda?.tipoServicio == TipoServicio.PARA_LLEVAR
+            val nuevaComanda = if (session.fastFoodActivo && esParaLlevar) {
+                runCatching {
+                    repo.abrirComandaSinMesa(
+                        tipoServicio = TipoServicio.PARA_LLEVAR,
+                        idMesero = session.idMesero,
+                        idTienda = session.idTienda,
+                        idCaja = session.idCaja
+                    )
+                }.getOrNull()
+            } else null
+
+            _uiState.value = _uiState.value.copy(
+                finalizado = true,
+                nuevaComandaFastFood = nuevaComanda
+            )
         }
     }
 

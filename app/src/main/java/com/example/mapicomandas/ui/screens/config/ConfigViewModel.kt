@@ -25,6 +25,7 @@ data class ConfigUiState(
     val idAlmacen: String = "1",
     val ssl: String = "off",
     val impresoraTicket: String = "",
+    val fastFood: Boolean = false,
     val probando: Boolean = false,
     val conectado: Boolean = false,
     val error: String? = null
@@ -55,7 +56,8 @@ class ConfigViewModel @Inject constructor(
             idCaja = session.idCaja.toString(),
             idAlmacen = session.idAlmacen.toString(),
             ssl = cfg.ssl,
-            impresoraTicket = cfg.impresoraTicket
+            impresoraTicket = cfg.impresoraTicket,
+            fastFood = session.fastFoodActivo
         )
     }
 
@@ -69,6 +71,10 @@ class ConfigViewModel @Inject constructor(
     fun setIdAlmacen(v: String) { _uiState.value = _uiState.value.copy(idAlmacen = v) }
     fun setSsl(v: String) { _uiState.value = _uiState.value.copy(ssl = v) }
     fun setImpresoraTicket(v: String) { _uiState.value = _uiState.value.copy(impresoraTicket = v) }
+    fun setFastFood(v: Boolean) {
+        _uiState.value = _uiState.value.copy(fastFood = v)
+        session.setFastFood(v)
+    }
 
     fun probarYGuardar() {
         val s = _uiState.value

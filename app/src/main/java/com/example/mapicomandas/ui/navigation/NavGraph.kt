@@ -120,9 +120,16 @@ fun MapiNavGraph(sessionManager: SessionManager) {
         ) {
             CobroScreen(
                 onVolver = { navController.popBackStack() },
-                onCobrado = {
-                    navController.navigate(Routes.MESAS) {
-                        popUpTo(Routes.MESAS) { inclusive = true }
+                onCobrado = { nuevaComandaFastFood ->
+                    if (nuevaComandaFastFood != null) {
+                        // Modo Comida Rápida: abrir la nueva comanda sin volver a mesas
+                        navController.navigate(Routes.comanda(nuevaComandaFastFood)) {
+                            popUpTo(Routes.MESAS)
+                        }
+                    } else {
+                        navController.navigate(Routes.MESAS) {
+                            popUpTo(Routes.MESAS) { inclusive = true }
+                        }
                     }
                 }
             )

@@ -121,6 +121,17 @@ class SessionManager @Inject constructor(
 
     val haIniciadoSesion get() = _nombreUsuario.value.isNotBlank()
 
+    // Modo Comida Rápida (REST_COMIDA_RAPIDA): tras cobrar para-llevar no cierra la
+    // ventana de comanda, limpia y abre una nueva venta.
+    private val _fastFood = MutableStateFlow(prefs.getBoolean("fastFood", false))
+    val fastFood: StateFlow<Boolean> = _fastFood
+    val fastFoodActivo get() = _fastFood.value
+
+    fun setFastFood(activo: Boolean) {
+        prefs.edit().putBoolean("fastFood", activo).apply()
+        _fastFood.value = activo
+    }
+
     val dbConfig get() = _sesion.value.dbConfig
     val idTienda get() = _sesion.value.idTienda
     val idCaja get() = _sesion.value.idCaja

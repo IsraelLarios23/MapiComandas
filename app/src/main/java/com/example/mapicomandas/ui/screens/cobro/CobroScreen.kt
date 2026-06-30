@@ -25,7 +25,7 @@ import com.example.mapicomandas.data.model.StatusLinea
 @Composable
 fun CobroScreen(
     onVolver: () -> Unit,
-    onCobrado: () -> Unit,
+    onCobrado: (Int?) -> Unit,
     viewModel: CobroViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -33,7 +33,7 @@ fun CobroScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(uiState.finalizado) {
-        if (uiState.finalizado) onCobrado()
+        if (uiState.finalizado) onCobrado(uiState.nuevaComandaFastFood)
     }
 
     LaunchedEffect(uiState.error) {

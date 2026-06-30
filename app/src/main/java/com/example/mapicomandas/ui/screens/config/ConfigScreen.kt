@@ -190,6 +190,27 @@ fun ConfigScreen(
 
             Divider()
 
+            // Modo Comida Rápida (Fast Food)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Venta Comida Rápida (Fast Food)", fontWeight = FontWeight.Medium)
+                    Text(
+                        "Al cobrar un pedido Para Llevar no cierra la comanda: limpia y abre una nueva venta.",
+                        fontSize = 12.sp, color = Color.Gray
+                    )
+                }
+                Switch(
+                    checked = uiState.fastFood,
+                    onCheckedChange = { viewModel.setFastFood(it) }
+                )
+            }
+
+            Divider()
+
             Text("Configuración de la caja", fontWeight = FontWeight.Bold, fontSize = 16.sp)
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
