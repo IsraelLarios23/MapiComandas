@@ -174,30 +174,53 @@ fun MesasScreen(
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun PlanoMesas(
     mesas: List<MesaUi>,
     onMesaClick: (MesaUi) -> Unit,
     onMesaLongClick: (MesaUi) -> Unit
 ) {
-    val maxX = (mesas.maxOfOrNull { it.posX + it.ancho } ?: 800) + 20
-    val maxY = (mesas.maxOfOrNull { it.posY + it.alto } ?: 600) + 20
+    // ¿Las mesas traen layout del editor (PosX/Ancho/Alto válidos)?
+    val tienenLayout = mesas.any { it.ancho > 0 && it.alto > 0 }
 
-    Box(
-        modifier = Modifier
-            .width(maxX.dp)
-            .height(maxY.dp)
-    ) {
-        mesas.forEach { mesa ->
-            BotonMesa(
-                mesa = mesa,
-                modifier = Modifier
-                    .offset(x = mesa.posX.dp, y = mesa.posY.dp)
-                    .width(mesa.ancho.dp)
-                    .height(mesa.alto.dp),
-                onClick = { onMesaClick(mesa) },
-                onLongClick = { onMesaLongClick(mesa) }
-            )
+    if (tienenLayout) {
+        val maxX = (mesas.maxOfOrNull { it.posX + maxOf(it.ancho, 1) } ?: 800) + 20
+        val maxY = (mesas.maxOfOrNull { it.posY + maxOf(it.alto, 1) } ?: 600) + 20
+        Box(
+            modifier = Modifier
+                .width(maxX.dp)
+                .height(maxY.dp)
+        ) {
+            mesas.forEach { mesa ->
+                BotonMesa(
+                    mesa = mesa,
+                    modifier = Modifier
+                        .offset(x = mesa.posX.dp, y = mesa.posY.dp)
+                        .width(maxOf(mesa.ancho, 80).dp)
+                        .height(maxOf(mesa.alto, 80).dp),
+                    onClick = { onMesaClick(mesa) },
+                    onLongClick = { onMesaLongClick(mesa) }
+                )
+            }
+        }
+    } else {
+        // Sin layout → rejilla automática
+        androidx.compose.foundation.layout.FlowRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            mesas.forEach { mesa ->
+                BotonMesa(
+                    mesa = mesa,
+                    modifier = Modifier.size(96.dp),
+                    onClick = { onMesaClick(mesa) },
+                    onLongClick = { onMesaLongClick(mesa) }
+                )
+            }
         }
     }
 }

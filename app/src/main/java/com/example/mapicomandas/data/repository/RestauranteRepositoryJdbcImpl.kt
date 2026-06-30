@@ -90,9 +90,7 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
                    m.PosX, m.PosY, m.Ancho, m.Alto, m.Forma, m.Color, m.IdGrupoMesa,
                    c.IdComanda, c.Folio, CONVERT(NVARCHAR(30), c.FechaApertura, 126) AS FechaApertura,
                    ISNULL(c.Total, 0) AS ImporteCuenta,
-                   (SELECT COUNT(*) FROM dbo.Reservaciones r
-                    WHERE r.IdMesa = m.IdMesa
-                      AND CAST(r.Fecha AS DATE) = CAST(GETDATE() AS DATE)) AS ReservasHoy
+                   0 AS ReservasHoy
             FROM dbo.Mesas m
             LEFT JOIN dbo.MaestroComandas c
                    ON c.IdMesa = m.IdMesa AND c.Status NOT IN (5, 6)
