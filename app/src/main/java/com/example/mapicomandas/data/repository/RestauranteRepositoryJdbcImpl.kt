@@ -146,11 +146,10 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         val folio = generarFolio(conn, "K", idTienda, idCaja)
         val idComanda = conn.insertAndGetId(
             """INSERT INTO dbo.MaestroComandas
-               (Folio,IdMesa,IdMesero,IdTienda,NumPersonas,Status,FechaApertura,
-                Observaciones,Subtotal,Descuento,IVA,Total,
-                TipoServicio,CargoEntrega,StatusEntrega)
-               VALUES (?,?,?,?,?,1,GETDATE(),?,0,0,0,0,1,0,0)""",
-            listOf(folio, idMesa, idMesero, idTienda, numPersonas, obs)
+               (Folio,IdMesa,IdMesero,IdUsuario,IdTienda,NumPersonas,Status,FechaApertura,
+                Observaciones,Subtotal,Descuento,IVA,Total)
+               VALUES (?,?,?,?,?,?,1,GETDATE(),?,0,0,0,0)""",
+            listOf(folio, idMesa, idMesero, session.idUsuario, idTienda, numPersonas, obs)
         )
         conn.executeUpdate(
             "UPDATE dbo.Mesas SET Status=2 WHERE IdMesa=?", listOf(idMesa)
@@ -162,45 +161,12 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         tipoServicio: Int, idMesero: Int, idTienda: Int, idCaja: Int,
         cliente: String, tel: String, dir: String,
         idRepartidor: Int?, idZona: Int?, cargoEntrega: Double
-    ): Int = db.inTransaction { conn ->
-        val folio = generarFolio(conn, "K", idTienda, idCaja)
-        val statusEntrega = if (tipoServicio == TipoServicio.DOMICILIO)
-            StatusEntrega.PENDIENTE else StatusEntrega.NA
-        val idComanda = conn.insertAndGetId(
-            """INSERT INTO dbo.MaestroComandas
-               (Folio,IdMesa,IdMesero,IdTienda,NumPersonas,Status,FechaApertura,
-                Observaciones,Subtotal,Descuento,IVA,Total,
-                TipoServicio,NombreCliente,TelefonoCliente,DireccionEntrega,
-                IdRepartidor,IdZonaReparto,CargoEntrega,StatusEntrega)
-               VALUES (?,NULL,?,?,1,1,GETDATE(),'',0,0,0,0,?,?,?,?,?,?,?,?)""",
-            listOf(
-                folio, idMesero, idTienda,
-                tipoServicio, cliente, tel, dir,
-                idRepartidor, idZona, cargoEntrega, statusEntrega
-            )
+    ): Int {
+        // Domicilio/para-llevar no existe en la BD MapiPOS actual (solo UI).
+        // Ver memoria mapipos-port-pendientes: requiere migración para activarse.
+        throw UnsupportedOperationException(
+            "El módulo de domicilio/para-llevar no está disponible en esta base de datos."
         )
-        // Si hay cargo de envío, insertar línea artículo 'ENV'
-        if (cargoEntrega > 0) {
-            val idEnv = db.queryOne(
-                "SELECT IdArticulo FROM dbo.Articulos WHERE Clave='ENV'",
-                map = { rs -> rs.getInt("IdArticulo") }
-            )
-            if (idEnv != null) {
-                val linea = conn.queryInt(
-                    "SELECT ISNULL(MAX(Linea),0)+1 FROM dbo.DetalleComandas WITH (UPDLOCK,HOLDLOCK) WHERE IdComanda=?",
-                    listOf(idComanda)
-                )
-                conn.executeUpdate(
-                    """INSERT INTO dbo.DetalleComandas
-                       (IdComanda,IdArticulo,Linea,Cantidad,PrecioUnitario,
-                        Descuento,Subtotal,IVA,IEPS,Total,Status,Notas)
-                       VALUES (?,?,?,1,?,0,?,0,0,?,1,'Cargo de envío')""",
-                    listOf(idComanda, idEnv, linea, cargoEntrega, cargoEntrega, cargoEntrega)
-                )
-                recalcularTotales(conn, idComanda)
-            }
-        }
-        idComanda
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -218,28 +184,18 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             "SELECT ISNULL(MAX(Linea),0)+1 FROM dbo.DetalleComandas WITH (UPDLOCK,HOLDLOCK) WHERE IdComanda=?",
             listOf(idComanda)
         )
-        // Calcular importes
+        // Calcular importes (la BD MapiPOS no maneja IEPS por línea en DetalleComandas)
         val base = precio * cantidad
         val ivaImporte = base * tasaIva
-        val iepsImporte = ieps * cantidad
-        val total = base + ivaImporte + iepsImporte
-
-        // Costo snapshot
-        val costo = db.queryOne(
-            """SELECT ISNULL(e.CostoPromedio, a.Costo) AS Costo
-               FROM dbo.Articulos a
-               LEFT JOIN dbo.Existencias e ON e.IdArticulo=a.IdArticulo AND e.IdAlmacen=?
-               WHERE a.IdArticulo=?""",
-            listOf(session.idAlmacen, idArticulo)
-        ) { rs -> rs.getDouble("Costo") } ?: 0.0
+        val total = base + ivaImporte
 
         val idDetalle = conn.insertAndGetId(
             """INSERT INTO dbo.DetalleComandas
                (IdComanda,IdArticulo,Linea,Cantidad,PrecioUnitario,
-                Descuento,Subtotal,IVA,IEPS,Total,Status,Notas,NumLugar,CostoUnitario)
-               VALUES (?,?,?,?,?,0,?,?,?,?,1,?,1,?)""",
+                Descuento,Subtotal,IVA,Total,Status,Notas,NumLugar)
+               VALUES (?,?,?,?,?,0,?,?,?,1,?,0)""",
             listOf(idComanda, idArticulo, linea, cantidad, precio,
-                   base, ivaImporte, iepsImporte, total, notas, costo)
+                   base, ivaImporte, total, notas)
         )
 
         // Modificadores
@@ -265,38 +221,28 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             )
         }
 
-        // Movimiento de inventario (salida)
-        registrarMovimientoInventario(conn, idArticulo, cantidad, costo, "S", idComanda)
-
         recalcularTotales(conn, idComanda)
         idDetalle
     }
 
     override suspend fun cancelarLinea(idDetalle: Int) = db.inTransaction { conn ->
-        val row = conn.queryOne(
-            "SELECT IdComanda, IdArticulo, Cantidad FROM dbo.DetalleComandas WHERE IdDetalleComanda=?",
+        val idComanda = conn.queryOne(
+            "SELECT IdComanda FROM dbo.DetalleComandas WHERE IdDetalleComanda=?",
             listOf(idDetalle)
-        ) { rs -> Triple(rs.getInt("IdComanda"), rs.getInt("IdArticulo"), rs.getDouble("Cantidad")) }
-            ?: return@inTransaction
+        ) { rs -> rs.getInt("IdComanda") } ?: return@inTransaction
 
         conn.executeUpdate(
             "UPDATE dbo.DetalleComandas SET Status=5 WHERE IdDetalleComanda=?",
             listOf(idDetalle)
         )
-        // Devolver al inventario (entrada)
-        val costo = conn.queryDouble(
-            "SELECT CostoUnitario FROM dbo.DetalleComandas WHERE IdDetalleComanda=?",
-            listOf(idDetalle)
-        )
-        registrarMovimientoInventario(conn, row.second, row.third, costo, "E", row.first)
-        recalcularTotales(conn, row.first)
+        recalcularTotales(conn, idComanda)
     }
 
     override suspend fun separarCantidad(idDetalle: Int, cantidadMover: Double, nuevoLugar: Int) =
         db.inTransaction { conn ->
             val orig = conn.queryOne(
                 """SELECT IdComanda, IdArticulo, Linea, Cantidad, PrecioUnitario,
-                          Descuento, Subtotal, IVA, IEPS, Total, Notas, CostoUnitario
+                          Descuento, Subtotal, IVA, Total, Notas
                    FROM dbo.DetalleComandas WHERE IdDetalleComanda=?""",
                 listOf(idDetalle)
             ) { rs ->
@@ -305,9 +251,7 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
                     "cantidad" to rs.getDouble("Cantidad"),
                     "precio" to rs.getDouble("PrecioUnitario"),
                     "iva" to rs.getDouble("IVA"),
-                    "ieps" to rs.getDouble("IEPS"),
-                    "notas" to rs.getString("Notas"),
-                    "costo" to rs.getDouble("CostoUnitario"),
+                    "notas" to (rs.getString("Notas") ?: ""),
                     "idArticulo" to rs.getInt("IdArticulo")
                 )
             } ?: return@inTransaction
@@ -315,19 +259,18 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             val cantOrig = orig["cantidad"] as Double
             val cantResta = cantOrig - cantidadMover
             val precio = orig["precio"] as Double
-            val tasaIva = if (cantOrig > 0) (orig["iva"] as Double) / cantOrig / precio else 0.16
-            val tasaIeps = if (cantOrig > 0) (orig["ieps"] as Double) / cantOrig / precio else 0.0
+            val tasaIva = if (cantOrig > 0 && precio > 0) (orig["iva"] as Double) / cantOrig / precio else 0.16
             val idComanda = orig["idComanda"] as Int
 
             // Actualizar cantidad original (a prorrata)
             val subtotalResta = precio * cantResta
             conn.executeUpdate(
                 """UPDATE dbo.DetalleComandas SET Cantidad=?,
-                   Subtotal=?, IVA=?, IEPS=?, Total=?
+                   Subtotal=?, IVA=?, Total=?
                    WHERE IdDetalleComanda=?""",
                 listOf(cantResta, subtotalResta,
-                       subtotalResta * tasaIva, subtotalResta * tasaIeps,
-                       subtotalResta * (1 + tasaIva + tasaIeps), idDetalle)
+                       subtotalResta * tasaIva,
+                       subtotalResta * (1 + tasaIva), idDetalle)
             )
 
             // Insertar nueva línea con la porción movida
@@ -339,12 +282,12 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             conn.insertAndGetId(
                 """INSERT INTO dbo.DetalleComandas
                    (IdComanda,IdArticulo,Linea,Cantidad,PrecioUnitario,
-                    Descuento,Subtotal,IVA,IEPS,Total,Status,Notas,NumLugar,CostoUnitario)
-                   VALUES (?,?,?,?,?,0,?,?,?,?,1,?,?,?)""",
+                    Descuento,Subtotal,IVA,Total,Status,Notas,NumLugar)
+                   VALUES (?,?,?,?,?,0,?,?,?,1,?,?)""",
                 listOf(idComanda, orig["idArticulo"], linea, cantidadMover, precio,
-                       subtotalNuevo, subtotalNuevo * tasaIva, subtotalNuevo * tasaIeps,
-                       subtotalNuevo * (1 + tasaIva + tasaIeps),
-                       orig["notas"], nuevoLugar, orig["costo"])
+                       subtotalNuevo, subtotalNuevo * tasaIva,
+                       subtotalNuevo * (1 + tasaIva),
+                       orig["notas"], nuevoLugar)
             )
             recalcularTotales(conn, idComanda)
         }
@@ -467,8 +410,7 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         val sql = """
             -- Parte 1: líneas normales (no kit)
             SELECT dc.IdDetalleComanda, dc.IdComanda, mc.Folio,
-                   CASE WHEN mc.IdMesa IS NULL THEN
-                        CASE ISNULL(mc.TipoServicio,1) WHEN 3 THEN N'DOMICILIO' WHEN 2 THEN N'PARA LLEVAR' ELSE N'SIN MESA' END
+                   CASE WHEN mc.IdMesa IS NULL THEN N'SIN MESA'
                         ELSE N'Mesa '+m.Numero END AS Mesa,
                    a.Nombre AS Articulo, dc.Cantidad, ISNULL(dc.Notas,'') AS Notas,
                    dc.Status, CONVERT(NVARCHAR(30),dc.FechaEnvio,126) AS FechaEnvio,
@@ -486,8 +428,7 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             UNION ALL
             -- Parte 2: componentes de kit
             SELECT dc.IdDetalleComanda, dc.IdComanda, mc.Folio,
-                   CASE WHEN mc.IdMesa IS NULL THEN
-                        CASE ISNULL(mc.TipoServicio,1) WHEN 3 THEN N'DOMICILIO' WHEN 2 THEN N'PARA LLEVAR' ELSE N'SIN MESA' END
+                   CASE WHEN mc.IdMesa IS NULL THEN N'SIN MESA'
                         ELSE N'Mesa '+m.Numero END AS Mesa,
                    ca.Nombre AS Articulo, dc.Cantidad*ISNULL(ki.Cantidad,1) AS Cantidad,
                    ISNULL(dc.Notas,'') AS Notas,
@@ -519,7 +460,7 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         propina: Double, pagos: List<PagoVenta>?
     ): Int = db.inTransaction { conn ->
         val comanda = conn.queryOne(
-            "SELECT Subtotal,Descuento,IVA,Total,IdMesa,IdMesero,IdGrupoMesa FROM dbo.MaestroComandas WHERE IdComanda=?",
+            "SELECT Subtotal,Descuento,IVA,Total,IdMesa FROM dbo.MaestroComandas WHERE IdComanda=?",
             listOf(idComanda)
         ) { rs ->
             mapOf(
@@ -527,77 +468,79 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
                 "descuento" to rs.getDouble("Descuento"),
                 "iva" to rs.getDouble("IVA"),
                 "total" to rs.getDouble("Total"),
-                "idMesa" to rs.getObject("IdMesa"),     // puede ser NULL
-                "idMesero" to rs.getInt("IdMesero"),
-                "idGrupoMesa" to rs.getObject("IdGrupoMesa")
+                "idMesa" to rs.getObject("IdMesa")      // puede ser NULL
             )
         } ?: error("Comanda no encontrada")
 
-        val totalConPropina = (comanda["total"] as Double) + propina
+        val total = comanda["total"] as Double
         val folioVenta = generarFolio(conn, "T", idTienda, idCaja)
+        val formaPagoVenta = pagos?.firstOrNull()?.idFormaPago ?: idFormaPago
 
-        // Crear Venta
+        // Crear Venta (esquema real: Fecha DATE + Hora TIME, sin Propina/IdCaja)
         val idVenta = conn.insertAndGetId(
             """INSERT INTO dbo.Ventas
-               (Folio,IdTienda,IdCaja,IdCliente,IdUsuario,IdComanda,IdMesero,
-                Subtotal,Descuento,IVA,Total,Propina,FechaVenta,Status)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,GETDATE(),1)""",
-            listOf(folioVenta, idTienda, idCaja, idCliente, idUsuario, idComanda,
-                   comanda["idMesero"], comanda["subtotal"], comanda["descuento"],
-                   comanda["iva"], totalConPropina, propina)
+               (Folio,Fecha,Hora,IdTienda,IdCliente,IdFormaPago,IdUsuario,IdComanda,
+                Subtotal,Descuento,IVA,Total,Cancelada)
+               VALUES (?,CAST(GETDATE() AS DATE),CAST(GETDATE() AS TIME),?,?,?,?,?,?,?,?,?,0)""",
+            listOf(folioVenta, idTienda, idCliente, formaPagoVenta, idUsuario, idComanda,
+                   comanda["subtotal"], comanda["descuento"], comanda["iva"], total)
         )
 
-        // DetalleVentas — por cada línea no cancelada
+        // DetalleVentas — por cada línea no cancelada (PK real: IdDetailVenta)
         val lineas = conn.query(
-            "SELECT * FROM dbo.DetalleComandas WHERE IdComanda=? AND Status<>5",
+            """SELECT dc.Linea, dc.IdArticulo, a.Nombre AS Descripcion, dc.Cantidad,
+                      dc.PrecioUnitario, dc.Descuento, dc.Subtotal, dc.IVA, dc.Total
+               FROM dbo.DetalleComandas dc
+               INNER JOIN dbo.Articulos a ON a.IdArticulo = dc.IdArticulo
+               WHERE dc.IdComanda=? AND dc.Status<>5""",
             listOf(idComanda)
         ) { rs ->
             mapOf(
-                "idArticulo" to rs.getInt("IdArticulo"),
                 "linea" to rs.getInt("Linea"),
+                "idArticulo" to rs.getInt("IdArticulo"),
+                "descripcion" to (rs.getString("Descripcion") ?: ""),
                 "cantidad" to rs.getDouble("Cantidad"),
                 "precio" to rs.getDouble("PrecioUnitario"),
                 "descuento" to rs.getDouble("Descuento"),
                 "subtotal" to rs.getDouble("Subtotal"),
                 "iva" to rs.getDouble("IVA"),
-                "ieps" to rs.getDouble("IEPS"),
-                "total" to rs.getDouble("Total"),
-                "costo" to rs.getDouble("CostoUnitario")
+                "total" to rs.getDouble("Total")
             )
         }
         lineas.forEach { l ->
             conn.executeUpdate(
                 """INSERT INTO dbo.DetalleVentas
-                   (IdVenta,IdArticulo,Linea,Cantidad,PrecioUnitario,
-                    Descuento,Subtotal,IVA,IEPS,Total,CostoUnitario)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                listOf(idVenta, l["idArticulo"], l["linea"], l["cantidad"],
-                       l["precio"], l["descuento"], l["subtotal"],
-                       l["iva"], l["ieps"], l["total"], l["costo"])
+                   (IdVenta,Linea,IdArticulo,Descripcion,Cantidad,PrecioUnitario,
+                    Descuento,Subtotal,IVA,Total)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                listOf(idVenta, l["linea"], l["idArticulo"], l["descripcion"], l["cantidad"],
+                       l["precio"], l["descuento"], l["subtotal"], l["iva"], l["total"])
             )
         }
 
-        // Pagos
-        val listaPagos = pagos ?: listOf(PagoVenta(idFormaPago, "", totalConPropina))
+        // Pagos (columna real: Monto). Pagos múltiples → PagosVenta + Pagos núcleo.
+        val listaPagos = pagos ?: listOf(PagoVenta(idFormaPago, "", total))
         listaPagos.forEach { p ->
             conn.executeUpdate(
-                "INSERT INTO dbo.PagosVenta (IdVenta,IdFormaPago,Importe) VALUES (?,?,?)",
-                listOf(idVenta, p.idFormaPago, p.importe)
+                "INSERT INTO dbo.PagosVenta (IdVenta,IdFormaPago,Monto,Referencia,Fecha) VALUES (?,?,?,?,GETDATE())",
+                listOf(idVenta, p.idFormaPago, p.importe, p.referencia)
             )
             conn.executeUpdate(
-                "INSERT INTO dbo.Pagos (IdCaja,IdVenta,IdFormaPago,Importe,Fecha) VALUES (?,?,?,?,GETDATE())",
-                listOf(idCaja, idVenta, p.idFormaPago, p.importe)
+                "INSERT INTO dbo.Pagos (IdVenta,IdFormaPago,IdUsuario,Monto,Moneda,Referencia,Tipo,Fecha) VALUES (?,?,?,?,'MXN',?,'Pago',GETDATE())",
+                listOf(idVenta, p.idFormaPago, idUsuario, p.importe, p.referencia)
             )
         }
 
-        // Liberar mesa (puede ser NULL — sin mesa)
+        // Liberar mesa (puede ser NULL). Si pertenece a un grupo, libera todo el grupo.
         val idMesa = comanda["idMesa"]
-        val idGrupo = comanda["idGrupoMesa"]
-        when {
-            idGrupo != null ->
-                conn.executeUpdate("UPDATE dbo.Mesas SET Status=1 WHERE IdGrupoMesa=?", listOf(idGrupo))
-            idMesa != null ->
-                conn.executeUpdate("UPDATE dbo.Mesas SET Status=1 WHERE IdMesa=?", listOf(idMesa))
+        if (idMesa != null) {
+            conn.executeUpdate(
+                """UPDATE dbo.Mesas SET Status=1
+                   WHERE IdMesa=?
+                      OR (IdGrupoMesa IS NOT NULL AND IdGrupoMesa =
+                          (SELECT IdGrupoMesa FROM dbo.Mesas WHERE IdMesa=?))""",
+                listOf(idMesa, idMesa)
+            )
         }
 
         // Cerrar comanda
@@ -641,101 +584,33 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // DOMICILIO
+    // DOMICILIO — no disponible en la BD MapiPOS actual (solo UI).
+    // Requiere migración (columnas en MaestroComandas + tablas RepartidoresRest/
+    // ZonasReparto). Ver memoria mapipos-port-pendientes.
     // ─────────────────────────────────────────────────────────────────────────
 
-    override suspend fun obtenerComandasSinMesaAbiertas(): List<ComandaSinMesa> =
-        db.query(
-            """SELECT mc.*, rep.Nombre AS NombreRepartidor, z.Nombre AS NombreZona,
-                      CONVERT(NVARCHAR(30),mc.FechaApertura,126) AS FechaAperturaStr
-               FROM dbo.MaestroComandas mc
-               LEFT JOIN dbo.RepartidoresRest rep ON rep.IdRepartidor=mc.IdRepartidor
-               LEFT JOIN dbo.ZonasReparto z ON z.IdZonaReparto=mc.IdZonaReparto
-               WHERE mc.IdMesa IS NULL AND mc.Status NOT IN (5,6)
-               ORDER BY mc.FechaApertura DESC"""
-        ) { rs ->
-            ComandaSinMesa(
-                idComanda = rs.getInt("IdComanda"),
-                folio = rs.getString("Folio"),
-                tipoServicio = rs.getInt("TipoServicio"),
-                nombreCliente = rs.getString("NombreCliente"),
-                telefonoCliente = rs.getString("TelefonoCliente"),
-                direccionEntrega = rs.getString("DireccionEntrega"),
-                idRepartidor = rs.getObject("IdRepartidor") as? Int,
-                nombreRepartidor = rs.getString("NombreRepartidor"),
-                idZonaReparto = rs.getObject("IdZonaReparto") as? Int,
-                nombreZona = rs.getString("NombreZona"),
-                cargoEntrega = rs.getDouble("CargoEntrega"),
-                statusEntrega = rs.getInt("StatusEntrega"),
-                total = rs.getDouble("Total"),
-                fechaApertura = rs.getString("FechaAperturaStr") ?: "",
-                status = rs.getInt("Status")
-            )
-        }
+    private fun domicilioNoDisponible(): Nothing = throw UnsupportedOperationException(
+        "El módulo de domicilio no está disponible en esta base de datos."
+    )
 
-    override suspend fun actualizarStatusEntrega(idComanda: Int, status: Int) {
-        db.execute(
-            "UPDATE dbo.MaestroComandas SET StatusEntrega=? WHERE IdComanda=?",
-            listOf(status, idComanda)
-        )
-    }
+    override suspend fun obtenerComandasSinMesaAbiertas(): List<ComandaSinMesa> = emptyList()
+
+    override suspend fun actualizarStatusEntrega(idComanda: Int, status: Int) = domicilioNoDisponible()
 
     override suspend fun actualizarDomicilio(
         idComanda: Int, cliente: String, tel: String, dir: String,
         idRepartidor: Int?, idZona: Int?, cargo: Double
-    ) {
-        db.execute(
-            """UPDATE dbo.MaestroComandas SET
-               NombreCliente=?, TelefonoCliente=?, DireccionEntrega=?,
-               IdRepartidor=?, IdZonaReparto=?, CargoEntrega=?
-               WHERE IdComanda=?""",
-            listOf(cliente, tel, dir, idRepartidor, idZona, cargo, idComanda)
-        )
-    }
+    ) = domicilioNoDisponible()
 
-    override suspend fun obtenerRepartidores(soloActivos: Boolean) =
-        db.query(
-            "SELECT * FROM dbo.RepartidoresRest ${if (soloActivos) "WHERE Activo=1" else ""} ORDER BY Nombre"
-        ) { rs ->
-            Repartidor(rs.getInt("IdRepartidor"), rs.getString("Nombre"),
-                rs.getString("Telefono") ?: "", rs.getBoolean("Activo"))
-        }
+    override suspend fun obtenerRepartidores(soloActivos: Boolean): List<Repartidor> = emptyList()
 
     override suspend fun guardarRepartidor(id: Int, nombre: String, tel: String, activo: Boolean): Int =
-        if (id == 0) {
-            db.executeAndGetId(
-                "INSERT INTO dbo.RepartidoresRest (Nombre,Telefono,Activo) VALUES (?,?,?)",
-                listOf(nombre, tel, activo)
-            )
-        } else {
-            db.execute(
-                "UPDATE dbo.RepartidoresRest SET Nombre=?,Telefono=?,Activo=? WHERE IdRepartidor=?",
-                listOf(nombre, tel, activo, id)
-            )
-            id
-        }
+        domicilioNoDisponible()
 
-    override suspend fun obtenerZonasReparto(soloActivos: Boolean) =
-        db.query(
-            "SELECT * FROM dbo.ZonasReparto ${if (soloActivos) "WHERE Activo=1" else ""} ORDER BY Nombre"
-        ) { rs ->
-            ZonaReparto(rs.getInt("IdZonaReparto"), rs.getString("Nombre"),
-                rs.getDouble("Cargo"), rs.getBoolean("Activo"))
-        }
+    override suspend fun obtenerZonasReparto(soloActivos: Boolean): List<ZonaReparto> = emptyList()
 
     override suspend fun guardarZonaReparto(id: Int, nombre: String, cargo: Double, activo: Boolean): Int =
-        if (id == 0) {
-            db.executeAndGetId(
-                "INSERT INTO dbo.ZonasReparto (Nombre,Cargo,Activo) VALUES (?,?,?)",
-                listOf(nombre, cargo, activo)
-            )
-        } else {
-            db.execute(
-                "UPDATE dbo.ZonasReparto SET Nombre=?,Cargo=?,Activo=? WHERE IdZonaReparto=?",
-                listOf(nombre, cargo, activo, id)
-            )
-            id
-        }
+        domicilioNoDisponible()
 
     // ─────────────────────────────────────────────────────────────────────────
     // CATÁLOGOS
@@ -853,31 +728,30 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
     // ─────────────────────────────────────────────────────────────────────────
 
     override suspend fun habilitarCaja(idCaja: Int, idUsuario: Int) {
-        db.execute(
-            "INSERT INTO dbo.AperturasCaja (IdCaja,IdUsuario,FechaApertura) VALUES (?,?,GETDATE())",
-            listOf(idCaja, idUsuario)
-        )
+        // La BD MapiPOS no tiene tabla de apertura: la apertura es el FondoInicial del
+        // CorteCaja vigente. El estado "habilitada" se mantiene local en SessionManager.
     }
 
     override suspend fun registrarMovimientoCaja(mov: MovimientoCaja): Int =
         db.executeAndGetId(
-            """INSERT INTO dbo.MovimientosCaja (IdCaja,IdUsuario,Tipo,Concepto,Importe,Fecha)
-               VALUES (?,?,?,?,?,GETDATE())""",
-            listOf(mov.idCaja, mov.idUsuario, mov.tipo, mov.concepto, mov.importe)
+            """INSERT INTO dbo.MovimientosCaja (IdTienda,IdUsuario,Tipo,TipoMovimiento,Monto,Concepto,Fecha,IdCaja)
+               VALUES (?,?,?,?,?,?,GETDATE(),?)""",
+            listOf(session.idTienda, mov.idUsuario, mov.tipo, mov.tipo, mov.importe, mov.concepto, mov.idCaja)
         )
 
     override suspend fun obtenerResumenCaja(idCaja: Int, idTienda: Int): ResumenCaja {
+        // Ventas no tiene IdCaja en el esquema real → se filtra por IdTienda + fecha de hoy.
         val resumen = db.queryOne(
             """SELECT
                ISNULL(SUM(v.Total),0) AS TotalVentas,
-               ISNULL(SUM(CASE WHEN fp.EsEfectivo=1 THEN pv.Importe ELSE 0 END),0) AS TotalEfectivo,
-               ISNULL(SUM(CASE WHEN fp.EsEfectivo=0 THEN pv.Importe ELSE 0 END),0) AS TotalOtros,
-               COUNT(v.IdVenta) AS NumTransacciones
+               ISNULL(SUM(CASE WHEN LOWER(fp.Nombre) LIKE '%efectivo%' THEN pv.Monto ELSE 0 END),0) AS TotalEfectivo,
+               ISNULL(SUM(CASE WHEN LOWER(fp.Nombre) LIKE '%efectivo%' THEN 0 ELSE pv.Monto END),0) AS TotalOtros,
+               COUNT(DISTINCT v.IdVenta) AS NumTransacciones
                FROM dbo.Ventas v
                INNER JOIN dbo.PagosVenta pv ON pv.IdVenta=v.IdVenta
                INNER JOIN dbo.FormasPago fp ON fp.IdFormaPago=pv.IdFormaPago
-               WHERE v.IdCaja=? AND v.IdTienda=? AND CAST(v.FechaVenta AS DATE)=CAST(GETDATE() AS DATE)""",
-            listOf(idCaja, idTienda)
+               WHERE v.IdTienda=? AND v.Fecha=CAST(GETDATE() AS DATE) AND ISNULL(v.Cancelada,0)=0""",
+            listOf(idTienda)
         ) { rs ->
             mapOf(
                 "ventas" to rs.getDouble("TotalVentas"),
@@ -889,8 +763,8 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
 
         val movimientos = db.queryOne(
             """SELECT
-               ISNULL(SUM(CASE WHEN Tipo='I' THEN Importe ELSE 0 END),0) AS TotalIngresos,
-               ISNULL(SUM(CASE WHEN Tipo='R' THEN Importe ELSE 0 END),0) AS TotalRetiros
+               ISNULL(SUM(CASE WHEN Tipo='I' THEN Monto ELSE 0 END),0) AS TotalIngresos,
+               ISNULL(SUM(CASE WHEN Tipo='R' THEN Monto ELSE 0 END),0) AS TotalRetiros
                FROM dbo.MovimientosCaja WHERE IdCaja=? AND CAST(Fecha AS DATE)=CAST(GETDATE() AS DATE)""",
             listOf(idCaja)
         ) { rs -> Pair(rs.getDouble("TotalIngresos"), rs.getDouble("TotalRetiros")) }
@@ -915,10 +789,8 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
     }
 
     override suspend fun realizarCorteZ(idCaja: Int, idUsuario: Int) {
-        db.execute(
-            "INSERT INTO dbo.CortesCaja (IdCaja,IdUsuario,Tipo,Fecha) VALUES (?,?,'Z',GETDATE())",
-            listOf(idCaja, idUsuario)
-        )
+        // El corte Z de MapiPOS (tabla CorteCaja) tiene muchas columnas obligatorias
+        // calculadas. Pendiente de implementar contra el flujo real. Ver memoria.
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -946,26 +818,6 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             listOf(serie, idTienda, idCaja, "$serie%")
         )
         return "$serie${String.format("%06d", num)}"
-    }
-
-    private fun registrarMovimientoInventario(
-        conn: Connection, idArticulo: Int, cantidad: Double,
-        costo: Double, tipo: String, idComanda: Int
-    ) {
-        runCatching {
-            conn.executeUpdate(
-                """INSERT INTO dbo.movimientos_inventario
-                   (IdArticulo,IdAlmacen,Tipo,Cantidad,Costo,Referencia,Fecha)
-                   VALUES (?,?,?,?,?,?,GETDATE())""",
-                listOf(idArticulo, session.idAlmacen, tipo, cantidad, costo, "COM-$idComanda")
-            )
-            val delta = if (tipo == "S") -cantidad else cantidad
-            conn.executeUpdate(
-                """UPDATE dbo.Existencias SET Existencia = Existencia + ?
-                   WHERE IdArticulo=? AND IdAlmacen=?""",
-                listOf(delta, idArticulo, session.idAlmacen)
-            )
-        }
     }
 
     private fun recalcularTotales(conn: Connection, idComanda: Int) {
@@ -1102,14 +954,15 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         descuento = getDouble("Descuento"),
         iva = getDouble("IVA"),
         total = getDouble("Total"),
-        tipoServicio = getInt("TipoServicio"),
-        nombreCliente = getString("NombreCliente"),
-        telefonoCliente = getString("TelefonoCliente"),
-        direccionEntrega = getString("DireccionEntrega"),
-        idRepartidor = getObject("IdRepartidor") as? Int,
-        idZonaReparto = getObject("IdZonaReparto") as? Int,
-        cargoEntrega = getDouble("CargoEntrega"),
-        statusEntrega = getInt("StatusEntrega")
+        // Domicilio no existe en la BD MapiPOS actual → valores neutros (comedor)
+        tipoServicio = TipoServicio.COMEDOR,
+        nombreCliente = null,
+        telefonoCliente = null,
+        direccionEntrega = null,
+        idRepartidor = null,
+        idZonaReparto = null,
+        cargoEntrega = 0.0,
+        statusEntrega = StatusEntrega.NA
     )
 
     private fun ResultSet.toLineaComanda() = LineaComanda(
@@ -1123,7 +976,7 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         descuento = getDouble("Descuento"),
         subtotal = getDouble("Subtotal"),
         iva = getDouble("IVA"),
-        ieps = getDouble("IEPS"),
+        ieps = 0.0,
         total = getDouble("Total"),
         status = getInt("Status"),
         notas = getString("Notas") ?: "",
@@ -1131,7 +984,7 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         fechaEnvio = getString("FechaEnvio"),
         fechaListo = getString("FechaListo"),
         minutosCocina = getObject("MinutosCocina") as? Int,
-        costoUnitario = getDouble("CostoUnitario")
+        costoUnitario = 0.0
     )
 
     private fun ResultSet.toModificadorAplicado() = ModificadorAplicado(
