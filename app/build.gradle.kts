@@ -59,6 +59,13 @@ android {
     }
 }
 
+// Fuerza una única versión de javapoet en todas las configuraciones
+configurations.all {
+    resolutionStrategy {
+        force("com.squareup:javapoet:1.13.0")
+    }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -76,6 +83,8 @@ dependencies {
     implementation(libs.hilt.android)
     kapt(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
+    // Fuerza javapoet 1.13.0 en kapt — evita NoSuchMethod ClassName.canonicalName()
+    kapt("com.squareup:javapoet:1.13.0")
 
     // Microsoft JDBC Driver para SQL Server (jre8 = compatible Android)
     implementation(libs.mssql.jdbc)
