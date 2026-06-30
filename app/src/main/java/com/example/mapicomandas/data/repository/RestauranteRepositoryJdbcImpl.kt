@@ -550,23 +550,20 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
     }
 
     override suspend fun calcularPropinaSugerida(idComanda: Int): Double {
-        val modo = db.queryOne(
-            "SELECT Valor FROM dbo.ConfiguracionSistema WHERE Clave='REST_PROPINA_MODO' AND (IdTienda=? OR IdTienda IS NULL)",
-            listOf(session.idTienda)
-        ) { rs -> rs.getString("Valor") } ?: "GLOBAL"
-
         val total = db.queryOne(
             "SELECT Total FROM dbo.MaestroComandas WHERE IdComanda=?",
             listOf(idComanda)
         ) { rs -> rs.getDouble("Total") } ?: 0.0
 
-        return if (modo == "GLOBAL") {
-            val pct = db.queryOne(
-                "SELECT Valor FROM dbo.ConfiguracionSistema WHERE Clave='REST_PROPINA_GLOBAL' AND (IdTienda=? OR IdTienda IS NULL)",
-                listOf(session.idTienda)
-            ) { rs -> rs.getString("Valor")?.toDoubleOrNull() } ?: 0.10
-            total * pct
-        } else 0.0
+        // ConfiguracionSistema real = solo (Clave, Valor). Tolerante a errores → 0% si falla.
+        val pct = runCatching {
+            db.queryOne(
+                "SELECT TOP 1 Valor FROM dbo.ConfiguracionSistema WHERE Clave='REST_PROPINA_GLOBAL'",
+                emptyList()
+            ) { rs -> rs.getString("Valor")?.toDoubleOrNull() }
+        }.getOrNull() ?: 0.0
+
+        return total * pct
     }
 
     override suspend fun obtenerFormasPago(): List<FormaPago> =
@@ -812,11 +809,7 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
 
     override suspend fun obtenerConfiguracion(idTienda: Int, idCaja: Int): List<ConfigEntry> =
         db.query(
-            """SELECT Clave, Valor FROM dbo.ConfiguracionSistema
-               WHERE (IdTienda IS NULL OR IdTienda=?)
-                 AND (IdCaja IS NULL OR IdCaja=?)
-               ORDER BY IdTienda DESC, IdCaja DESC""",
-            listOf(idTienda, idCaja)
+            "SELECT Clave, Valor FROM dbo.ConfiguracionSistema"
         ) { rs -> ConfigEntry(rs.getString("Clave"), rs.getString("Valor") ?: "") }
 
     // ─────────────────────────────────────────────────────────────────────────

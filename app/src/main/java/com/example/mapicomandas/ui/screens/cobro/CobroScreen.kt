@@ -27,6 +27,7 @@ fun CobroScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(uiState.cobrado) {
         if (uiState.cobrado) onCobrado()
@@ -34,7 +35,7 @@ fun CobroScreen(
 
     LaunchedEffect(uiState.error) {
         uiState.error?.let {
-            snackbarHostState.showSnackbar(it)
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
             viewModel.limpiarError()
         }
     }
