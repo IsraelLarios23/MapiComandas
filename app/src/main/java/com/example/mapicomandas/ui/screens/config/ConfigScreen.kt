@@ -6,11 +6,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import android.widget.Toast
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -30,12 +32,20 @@ fun ConfigScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var mostrarPassword by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     LaunchedEffect(uiState.conectado) {
-        if (uiState.conectado) onConectado()
+        if (uiState.conectado) {
+            Toast.makeText(context, "✅ Conexión exitosa", Toast.LENGTH_SHORT).show()
+            onConectado()
+        }
     }
     LaunchedEffect(uiState.error) {
-        uiState.error?.let { snackbarHostState.showSnackbar(it); viewModel.limpiarError() }
+        uiState.error?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            snackbarHostState.showSnackbar(it)
+            viewModel.limpiarError()
+        }
     }
 
     Scaffold(

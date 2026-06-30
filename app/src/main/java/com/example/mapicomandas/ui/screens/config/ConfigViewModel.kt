@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 
 data class ConfigUiState(
@@ -92,8 +93,12 @@ class ConfigViewModel @Inject constructor(
             )
             db.invalidate()
 
-            val resultado = withContext(Dispatchers.IO) {
-                runCatching { db.getConnection().also { it.createStatement().execute("SELECT 1") } }
+            val resultado = runCatching {
+                withTimeout(40_000) {
+                    withContext(Dispatchers.IO) {
+                        db.getConnection().also { it.createStatement().execute("SELECT 1") }
+                    }
+                }
             }
 
             if (resultado.isSuccess) {
