@@ -122,11 +122,9 @@ fun MesasScreen(
                     CircularProgressIndicator()
                 }
             } else {
-                // Plano de mesas en scroll libre
+                // Plano de mesas (escala proporcional a la pantalla)
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                    modifier = Modifier.fillMaxSize()
                 ) {
                     PlanoMesas(
                         mesas = uiState.mesas,
@@ -185,30 +183,37 @@ fun PlanoMesas(
     val tienenLayout = mesas.any { it.ancho > 0 && it.alto > 0 }
 
     if (tienenLayout) {
-        val maxX = (mesas.maxOfOrNull { it.posX + maxOf(it.ancho, 1) } ?: 800) + 20
-        val maxY = (mesas.maxOfOrNull { it.posY + maxOf(it.alto, 1) } ?: 600) + 20
-        Box(
-            modifier = Modifier
-                .width(maxX.dp)
-                .height(maxY.dp)
-        ) {
-            mesas.forEach { mesa ->
-                BotonMesa(
-                    mesa = mesa,
-                    modifier = Modifier
-                        .offset(x = mesa.posX.dp, y = mesa.posY.dp)
-                        .width(maxOf(mesa.ancho, 80).dp)
-                        .height(maxOf(mesa.alto, 80).dp),
-                    onClick = { onMesaClick(mesa) },
-                    onLongClick = { onMesaLongClick(mesa) }
-                )
+        // Tamaño total del plano según el editor
+        val padding = 16
+        val contenidoX = (mesas.maxOfOrNull { it.posX + maxOf(it.ancho, 1) } ?: 800) + padding
+        val contenidoY = (mesas.maxOfOrNull { it.posY + maxOf(it.alto, 1) } ?: 600) + padding
+
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            // Factor de escala para que TODO el plano quepa en la pantalla (sin deformar)
+            val dispW = maxWidth.value
+            val dispH = maxHeight.value
+            val escala = minOf(dispW / contenidoX, dispH / contenidoY).coerceAtMost(1.5f)
+
+            Box(modifier = Modifier.fillMaxSize()) {
+                mesas.forEach { mesa ->
+                    BotonMesa(
+                        mesa = mesa,
+                        modifier = Modifier
+                            .offset(x = (mesa.posX * escala).dp, y = (mesa.posY * escala).dp)
+                            .width((maxOf(mesa.ancho, 70) * escala).dp)
+                            .height((maxOf(mesa.alto, 70) * escala).dp),
+                        onClick = { onMesaClick(mesa) },
+                        onLongClick = { onMesaLongClick(mesa) }
+                    )
+                }
             }
         }
     } else {
-        // Sin layout → rejilla automática
+        // Sin layout → rejilla automática que se ajusta al ancho disponible
         androidx.compose.foundation.layout.FlowRow(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
