@@ -487,7 +487,14 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         idComanda: Int, idFormaPago: Int, idCliente: Int, idUsuario: Int,
         idTienda: Int, idCaja: Int, idAlmacen: Int, tasaIva: Double,
         propina: Double, pagos: List<PagoVenta>?
-    ): Int = db.inTransaction { conn ->
+    ): Int {
+        // Auto-apertura: si no hay caja abierta (p.ej. tras un corte Z), abre el periodo
+        // automáticamente para poder seguir vendiendo sin "Habilitar caja".
+        if (corteAbiertoId(idTienda, idCaja) == null) {
+            runCatching { habilitarCaja(idCaja, idUsuario) }
+            runCatching { session.setCajaHabilitada(true) }
+        }
+        return db.inTransaction { conn ->
         val comanda = conn.queryOne(
             "SELECT Subtotal,Descuento,IVA,Total,IdMesa FROM dbo.MaestroComandas WHERE IdComanda=?",
             listOf(idComanda)
@@ -578,6 +585,7 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             listOf(idVenta, idComanda)
         )
         idVenta
+        }
     }
 
     override suspend fun calcularPropinaSugerida(idComanda: Int): Double {
