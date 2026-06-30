@@ -602,13 +602,14 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
 
     override suspend fun obtenerFormasPago(): List<FormaPago> =
         db.query(
-            "SELECT IdFormaPago, Nombre, Activo, CASE WHEN LOWER(Nombre) LIKE '%efectivo%' THEN 1 ELSE 0 END AS EsEfectivo FROM dbo.FormasPago WHERE Activo=1 ORDER BY Nombre"
+            "SELECT * FROM dbo.FormasPago WHERE ISNULL(Activo,1)=1 ORDER BY Nombre"
         ) { rs ->
             FormaPago(
                 idFormaPago = rs.getInt("IdFormaPago"),
                 nombre = rs.getString("Nombre"),
-                activo = rs.getBoolean("Activo"),
-                esEfectivo = rs.getInt("EsEfectivo") == 1
+                activo = rs.optBoolean("Activo", true),
+                esEfectivo = (rs.getString("Nombre") ?: "").contains("efectivo", ignoreCase = true),
+                usaTerminal = rs.optBoolean("UsaTerminal", false)
             )
         }
 

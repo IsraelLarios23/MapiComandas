@@ -317,7 +317,8 @@ data class FormaPago(
     val idFormaPago: Int,
     val nombre: String,
     val activo: Boolean,
-    val esEfectivo: Boolean
+    val esEfectivo: Boolean,
+    val usaTerminal: Boolean = false   // dispara cobro con terminal NetPay
 )
 
 // ─── Requests / Responses ─────────────────────────────────────────────────────

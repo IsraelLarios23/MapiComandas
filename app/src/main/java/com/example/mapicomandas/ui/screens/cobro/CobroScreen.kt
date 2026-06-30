@@ -290,8 +290,8 @@ fun CobroScreen(
                         montoSugerido = importeRestante,
                         montoMaximo = importeRestante,
                         onConfirmar = { monto ->
-                            if (forma.nombre.contains("netpay", ignoreCase = true)) {
-                                viewModel.cobrarConNetPay(forma, monto)   // terminal
+                            if (forma.usaTerminal) {
+                                viewModel.cobrarConNetPay(forma, monto)   // terminal NetPay
                             } else {
                                 viewModel.agregarPago(forma, monto)
                             }
