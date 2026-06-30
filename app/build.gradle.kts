@@ -2,7 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.kotlin.kapt)   // para Hilt
+    id("kotlin-kapt")                 // para Hilt (sin versión — viene con kotlin-android)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)           // solo para Room
 }
