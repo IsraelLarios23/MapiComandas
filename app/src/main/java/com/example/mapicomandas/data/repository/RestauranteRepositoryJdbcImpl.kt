@@ -737,17 +737,89 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
     // CAJA
     // ─────────────────────────────────────────────────────────────────────────
 
+    // Detecta el esquema de movimientos de caja: 'lower' (movimientos_caja + aperturas_caja),
+    // 'upper' (MovimientosCaja) o 'none'.
+    private suspend fun esquemaMovCaja(): String =
+        db.queryOne(
+            """SELECT CASE
+                 WHEN OBJECT_ID('dbo.movimientos_caja') IS NOT NULL THEN 'lower'
+                 WHEN OBJECT_ID('dbo.MovimientosCaja') IS NOT NULL THEN 'upper'
+                 ELSE 'none' END AS E""",
+            emptyList()
+        ) { rs -> rs.getString("E") } ?: "none"
+
     override suspend fun habilitarCaja(idCaja: Int, idUsuario: Int) {
-        // La BD MapiPOS no tiene tabla de apertura: la apertura es el FondoInicial del
-        // CorteCaja vigente. El estado "habilitada" se mantiene local en SessionManager.
+        // En el esquema lowercase, abrir caja = crear una apertura (si no hay una hoy)
+        if (esquemaMovCaja() == "lower") {
+            val existe = db.queryOne(
+                """SELECT TOP 1 IdApertura FROM dbo.aperturas_caja
+                   WHERE IdTienda=? AND ISNULL(IdCaja,?)=? AND CAST(FechaApertura AS DATE)=CAST(GETDATE() AS DATE)
+                   ORDER BY FechaApertura DESC""",
+                listOf(session.idTienda, idCaja, idCaja)
+            ) { rs -> rs.getInt("IdApertura") }
+            if (existe == null) {
+                db.execute(
+                    """INSERT INTO dbo.aperturas_caja (IdTienda,IdCaja,IdCajero,FondoInicial,FechaApertura)
+                       VALUES (?,?,?,0,GETDATE())""",
+                    listOf(session.idTienda, idCaja, idUsuario)
+                )
+            }
+        }
     }
 
     override suspend fun registrarMovimientoCaja(mov: MovimientoCaja): Int =
-        db.executeAndGetId(
-            """INSERT INTO dbo.MovimientosCaja (IdTienda,IdUsuario,Tipo,TipoMovimiento,Monto,Concepto,Fecha,IdCaja)
-               VALUES (?,?,?,?,?,?,GETDATE(),?)""",
-            listOf(session.idTienda, mov.idUsuario, mov.tipo, mov.tipo, mov.importe, mov.concepto, mov.idCaja)
-        )
+        when (esquemaMovCaja()) {
+            "lower" -> {
+                val apertura = db.queryOne(
+                    """SELECT TOP 1 IdApertura FROM dbo.aperturas_caja
+                       WHERE IdTienda=? AND ISNULL(IdCaja,?)=?
+                       ORDER BY FechaApertura DESC""",
+                    listOf(session.idTienda, mov.idCaja, mov.idCaja)
+                ) { rs -> rs.getInt("IdApertura") }
+                val tipoMov = if (mov.tipo == "I") "Incremento" else "Retiro"
+                db.executeAndGetId(
+                    """INSERT INTO dbo.movimientos_caja (apertura_id,tipo_movimiento,monto,motivo,usuario_id,fecha)
+                       VALUES (?,?,?,?,?,GETDATE())""",
+                    listOf(apertura, tipoMov, mov.importe, mov.concepto, mov.idUsuario)
+                )
+            }
+            "upper" -> db.executeAndGetId(
+                """INSERT INTO dbo.MovimientosCaja (IdTienda,IdUsuario,Tipo,Monto,Concepto,Fecha,IdCaja)
+                   VALUES (?,?,?,?,?,GETDATE(),?)""",
+                listOf(session.idTienda, mov.idUsuario,
+                    if (mov.tipo == "I") "Incremento" else "Retiro",
+                    mov.importe, mov.concepto, mov.idCaja)
+            )
+            else -> 0
+        }
+
+    /** Ingresos/retiros del día según el esquema de movimientos de caja. */
+    private suspend fun movimientosDelDia(idCaja: Int): Pair<Double, Double> {
+        val sql = when (esquemaMovCaja()) {
+            "lower" -> """
+                SELECT
+                  ISNULL(SUM(CASE WHEN m.tipo_movimiento='Incremento' THEN m.monto ELSE 0 END),0) AS Ingresos,
+                  ISNULL(SUM(CASE WHEN m.tipo_movimiento='Retiro' THEN m.monto ELSE 0 END),0) AS Retiros
+                FROM dbo.movimientos_caja m
+                LEFT JOIN dbo.aperturas_caja a ON a.IdApertura=m.apertura_id
+                WHERE CAST(m.fecha AS DATE)=CAST(GETDATE() AS DATE)
+                  AND (a.IdCaja IS NULL OR a.IdCaja=?)
+            """.trimIndent()
+            "upper" -> """
+                SELECT
+                  ISNULL(SUM(CASE WHEN Tipo IN ('I','Incremento','Ingreso') THEN Monto ELSE 0 END),0) AS Ingresos,
+                  ISNULL(SUM(CASE WHEN Tipo IN ('R','Retiro') THEN Monto ELSE 0 END),0) AS Retiros
+                FROM dbo.MovimientosCaja
+                WHERE IdCaja=? AND CAST(Fecha AS DATE)=CAST(GETDATE() AS DATE)
+            """.trimIndent()
+            else -> return 0.0 to 0.0
+        }
+        return runCatching {
+            db.queryOne(sql, listOf(idCaja)) { rs ->
+                rs.getDouble("Ingresos") to rs.getDouble("Retiros")
+            }
+        }.getOrNull() ?: (0.0 to 0.0)
+    }
 
     override suspend fun obtenerResumenCaja(idCaja: Int, idTienda: Int): ResumenCaja {
         // Ventas no tiene IdCaja en el esquema real → se filtra por IdTienda + fecha de hoy.
@@ -771,14 +843,7 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             )
         } ?: mapOf("ventas" to 0.0, "efectivo" to 0.0, "otros" to 0.0, "num" to 0)
 
-        val movimientos = db.queryOne(
-            """SELECT
-               ISNULL(SUM(CASE WHEN Tipo='I' THEN Monto ELSE 0 END),0) AS TotalIngresos,
-               ISNULL(SUM(CASE WHEN Tipo='R' THEN Monto ELSE 0 END),0) AS TotalRetiros
-               FROM dbo.MovimientosCaja WHERE IdCaja=? AND CAST(Fecha AS DATE)=CAST(GETDATE() AS DATE)""",
-            listOf(idCaja)
-        ) { rs -> Pair(rs.getDouble("TotalIngresos"), rs.getDouble("TotalRetiros")) }
-            ?: Pair(0.0, 0.0)
+        val movimientos = movimientosDelDia(idCaja)
 
         val ventas = resumen["ventas"] as Double
         val efectivo = resumen["efectivo"] as Double
@@ -798,8 +863,10 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         )
     }
 
-    override suspend fun realizarCorteZ(idCaja: Int, idUsuario: Int): Unit = db.inTransaction { conn ->
+    override suspend fun realizarCorteZ(idCaja: Int, idUsuario: Int) {
         val idTienda = session.idTienda
+        val (incrementos, retiros) = movimientosDelDia(idCaja)
+        db.inTransaction { conn ->
 
         // Totales de ventas del día por medio de pago (Ventas no tiene IdCaja → por tienda+fecha)
         val ventas = conn.queryOne(
@@ -822,21 +889,11 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             )
         } ?: mapOf("efectivo" to 0.0, "tarjeta" to 0.0, "transfer" to 0.0, "total" to 0.0)
 
-        val mov = conn.queryOne(
-            """SELECT
-               ISNULL(SUM(CASE WHEN Tipo='I' THEN Monto ELSE 0 END),0) AS Ingresos,
-               ISNULL(SUM(CASE WHEN Tipo='R' THEN Monto ELSE 0 END),0) AS Retiros
-               FROM dbo.MovimientosCaja WHERE IdCaja=? AND CAST(Fecha AS DATE)=CAST(GETDATE() AS DATE)""",
-            listOf(idCaja)
-        ) { rs -> Pair(rs.getDouble("Ingresos"), rs.getDouble("Retiros")) } ?: Pair(0.0, 0.0)
-
         val efectivo = ventas["efectivo"] as Double
         val tarjeta = ventas["tarjeta"] as Double
         val transfer = ventas["transfer"] as Double
         val totalVentas = ventas["total"] as Double
         val otros = (totalVentas - efectivo - tarjeta - transfer).coerceAtLeast(0.0)
-        val incrementos = mov.first
-        val retiros = mov.second
         val fondoInicial = 0.0
         val efectivoEsperado = fondoInicial + efectivo + incrementos - retiros
 
@@ -854,6 +911,7 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
                    efectivo, tarjeta, transfer, otros, totalVentas,
                    retiros, incrementos, efectivoEsperado, efectivoEsperado, idCaja)
         )
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
