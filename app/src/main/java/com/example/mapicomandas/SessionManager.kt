@@ -9,6 +9,14 @@ import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
+data class DbConfig(
+    val host: String = "",
+    val puerto: Int = 1433,
+    val baseDatos: String = "",
+    val usuario: String = "",
+    val password: String = ""
+)
+
 data class Sesion(
     val idTienda: Int = 1,
     val idCaja: Int = 1,
@@ -17,7 +25,7 @@ data class Sesion(
     val idMesero: Int = 1,
     val nombreMesero: String = "",
     val cajaHabilitada: Boolean = false,
-    val baseUrl: String = ""
+    val dbConfig: DbConfig = DbConfig()
 )
 
 @Singleton
@@ -47,12 +55,22 @@ class SessionManager @Inject constructor(
         idMesero = prefs.getInt("idMesero", 1),
         nombreMesero = prefs.getString("nombreMesero", "") ?: "",
         cajaHabilitada = prefs.getBoolean("cajaHabilitada", false),
-        baseUrl = prefs.getString("baseUrl", "http://10.0.2.2:5000") ?: "http://10.0.2.2:5000"
+        dbConfig = DbConfig(
+            host = prefs.getString("dbHost", "") ?: "",
+            puerto = prefs.getInt("dbPuerto", 1433),
+            baseDatos = prefs.getString("dbNombre", "") ?: "",
+            usuario = prefs.getString("dbUsuario", "") ?: "",
+            password = prefs.getString("dbPassword", "") ?: ""
+        )
     )
 
-    fun guardarConfiguracion(baseUrl: String, idTienda: Int, idCaja: Int, idAlmacen: Int) {
+    fun guardarDbConfig(config: DbConfig, idTienda: Int, idCaja: Int, idAlmacen: Int) {
         prefs.edit()
-            .putString("baseUrl", baseUrl)
+            .putString("dbHost", config.host)
+            .putInt("dbPuerto", config.puerto)
+            .putString("dbNombre", config.baseDatos)
+            .putString("dbUsuario", config.usuario)
+            .putString("dbPassword", config.password)
             .putInt("idTienda", idTienda)
             .putInt("idCaja", idCaja)
             .putInt("idAlmacen", idAlmacen)
@@ -78,11 +96,12 @@ class SessionManager @Inject constructor(
         _sesion.value = _sesion.value.copy(idUsuario = idUsuario)
     }
 
-    val baseUrl get() = _sesion.value.baseUrl
+    val dbConfig get() = _sesion.value.dbConfig
     val idTienda get() = _sesion.value.idTienda
     val idCaja get() = _sesion.value.idCaja
     val idAlmacen get() = _sesion.value.idAlmacen
     val idMesero get() = _sesion.value.idMesero
     val idUsuario get() = _sesion.value.idUsuario
     val cajaHabilitada get() = _sesion.value.cajaHabilitada
+    val estaConfigurado get() = _sesion.value.dbConfig.host.isNotBlank()
 }
