@@ -86,6 +86,16 @@ data class MesaUi(
     val reservasHoy: Int
 )
 
+// ─── Usuarios (login MapiPOS) ──────────────────────────────────────────────────
+
+data class Usuario(
+    val idUsuario: Int,
+    val nombre: String,
+    val usuario: String,
+    val idPerfil: Int,
+    val activo: Boolean
+)
+
 // ─── Meseros ──────────────────────────────────────────────────────────────────
 
 data class Mesero(

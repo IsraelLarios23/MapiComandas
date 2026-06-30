@@ -36,6 +36,7 @@ fun MesasScreen(
     onIrAKds: () -> Unit,
     onIrACaja: () -> Unit,
     onIrADomicilio: () -> Unit,
+    onVolver: (() -> Unit)? = null,
     viewModel: MesasViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -47,6 +48,13 @@ fun MesasScreen(
         topBar = {
             TopAppBar(
                 title = { Text("MapiComandas — Plano de Mesas", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    if (onVolver != null) {
+                        IconButton(onClick = onVolver) {
+                            Icon(Icons.Default.ArrowBack, "Volver")
+                        }
+                    }
+                },
                 actions = {
                     IconButton(onClick = { viewModel.refrescarMesas() }) {
                         Icon(Icons.Default.Refresh, "Refrescar")
@@ -64,7 +72,8 @@ fun MesasScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = Color.White,
-                    actionIconContentColor = Color.White
+                    actionIconContentColor = Color.White,
+                    navigationIconContentColor = Color.White
                 )
             )
         }

@@ -96,6 +96,25 @@ class SessionManager @Inject constructor(
         _sesion.value = _sesion.value.copy(idUsuario = idUsuario)
     }
 
+    private val _nombreUsuario = MutableStateFlow(prefs.getString("nombreUsuario", "") ?: "")
+    val nombreUsuario: StateFlow<String> = _nombreUsuario
+
+    fun iniciarSesion(idUsuario: Int, nombre: String) {
+        prefs.edit()
+            .putInt("idUsuario", idUsuario)
+            .putString("nombreUsuario", nombre)
+            .apply()
+        _sesion.value = _sesion.value.copy(idUsuario = idUsuario)
+        _nombreUsuario.value = nombre
+    }
+
+    fun cerrarSesion() {
+        prefs.edit().remove("nombreUsuario").apply()
+        _nombreUsuario.value = ""
+    }
+
+    val haIniciadoSesion get() = _nombreUsuario.value.isNotBlank()
+
     val dbConfig get() = _sesion.value.dbConfig
     val idTienda get() = _sesion.value.idTienda
     val idCaja get() = _sesion.value.idCaja

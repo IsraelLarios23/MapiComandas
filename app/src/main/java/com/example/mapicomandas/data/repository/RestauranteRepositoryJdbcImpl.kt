@@ -15,6 +15,24 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
 ) : RestauranteRepository {
 
     // ─────────────────────────────────────────────────────────────────────────
+    // LOGIN (usuarios MapiPOS)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    override suspend fun login(usuario: String, password: String): Usuario? =
+        db.queryOne(
+            """SELECT TOP 1 IdUsuario, Nombre, Usuario, ISNULL(IdPerfil,0) AS IdPerfil, Activo
+               FROM dbo.Usuarios
+               WHERE Usuario = ? AND Contrasena = ? AND Activo = 1""",
+            listOf(usuario, password)
+        ) { rs -> rs.toUsuario() }
+
+    override suspend fun obtenerUsuarios(): List<Usuario> =
+        db.query(
+            """SELECT IdUsuario, Nombre, Usuario, ISNULL(IdPerfil,0) AS IdPerfil, Activo
+               FROM dbo.Usuarios WHERE Activo = 1 ORDER BY Nombre"""
+        ) { rs -> rs.toUsuario() }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // MESAS
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -1001,6 +1019,14 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         color = getInt("Color"),
         idGrupoMesa = getObject("IdGrupoMesa") as? Int,
         activa = getBoolean("Activa")
+    )
+
+    private fun ResultSet.toUsuario() = Usuario(
+        idUsuario = getInt("IdUsuario"),
+        nombre = getString("Nombre") ?: "",
+        usuario = getString("Usuario") ?: "",
+        idPerfil = getInt("IdPerfil"),
+        activo = getBoolean("Activo")
     )
 
     private fun ResultSet.toMesero() = Mesero(

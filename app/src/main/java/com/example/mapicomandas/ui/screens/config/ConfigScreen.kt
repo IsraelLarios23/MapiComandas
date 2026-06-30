@@ -24,6 +24,7 @@ import com.example.mapicomandas.DbConfig
 @Composable
 fun ConfigScreen(
     onConectado: () -> Unit,
+    onVolver: (() -> Unit)? = null,
     viewModel: ConfigViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -41,10 +42,18 @@ fun ConfigScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Configuración de Conexión", fontWeight = FontWeight.Bold) },
+                title = { Text("Configuración", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    if (onVolver != null) {
+                        IconButton(onClick = onVolver) {
+                            Icon(Icons.Default.ArrowBack, "Volver")
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = Color.White
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White
                 )
             )
         }

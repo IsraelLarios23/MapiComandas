@@ -4,6 +4,10 @@ import com.example.mapicomandas.data.model.*
 
 interface RestauranteRepository {
 
+    // ── Login (usuarios MapiPOS) ──────────────────────────────────────────────
+    suspend fun login(usuario: String, password: String): Usuario?
+    suspend fun obtenerUsuarios(): List<Usuario>
+
     // ── Mesas ─────────────────────────────────────────────────────────────────
     suspend fun obtenerMesas(zona: String? = null): List<MesaUi>
     suspend fun obtenerZonas(): List<String>
