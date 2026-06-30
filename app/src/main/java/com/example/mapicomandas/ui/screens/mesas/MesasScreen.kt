@@ -40,9 +40,17 @@ fun MesasScreen(
     viewModel: MesasViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
     var mostrarDialogoApertura by remember { mutableStateOf(false) }
     var mostrarDialogoCambioMesero by remember { mutableStateOf(false) }
     var mostrarDialogoCambioMesa by remember { mutableStateOf(false) }
+
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.limpiarError()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -142,12 +150,6 @@ fun MesasScreen(
             }
         }
 
-        // Error snackbar
-        uiState.error?.let { error ->
-            LaunchedEffect(error) {
-                viewModel.limpiarError()
-            }
-        }
     }
 
     // Diálogo apertura de comanda

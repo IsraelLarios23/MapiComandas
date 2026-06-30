@@ -811,11 +811,13 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
     // ─────────────────────────────────────────────────────────────────────────
 
     private fun generarFolio(conn: Connection, serie: String, idTienda: Int, idCaja: Int): String {
+        // MaestroComandas y Ventas NO tienen columna IdCaja → folio por tienda.
+        val tabla = if (serie == "K") "MaestroComandas" else "Ventas"
         val num = conn.queryInt(
             """SELECT ISNULL(MAX(CAST(SUBSTRING(Folio, LEN(?)+1, 20) AS INT)), 0)+1
-               FROM dbo.${if (serie == "K") "MaestroComandas" else "Ventas"} WITH (UPDLOCK,HOLDLOCK)
-               WHERE IdTienda=? AND IdCaja=? AND Folio LIKE ?""",
-            listOf(serie, idTienda, idCaja, "$serie%")
+               FROM dbo.$tabla WITH (UPDLOCK,HOLDLOCK)
+               WHERE IdTienda=? AND Folio LIKE ? AND ISNUMERIC(SUBSTRING(Folio, LEN(?)+1, 20)) = 1""",
+            listOf(serie, idTienda, "$serie%", serie)
         )
         return "$serie${String.format("%06d", num)}"
     }
