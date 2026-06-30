@@ -199,7 +199,8 @@ fun ConfigScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Venta Comida Rápida (Fast Food)", fontWeight = FontWeight.Medium)
                     Text(
-                        "Al cobrar un pedido Para Llevar no cierra la comanda: limpia y abre una nueva venta.",
+                        "REST_COMIDA_RAPIDA: se lee de la configuración de MapiPOS; este interruptor " +
+                        "es el valor local de respaldo si la BD no tiene la clave.",
                         fontSize = 12.sp, color = Color.Gray
                     )
                 }

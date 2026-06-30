@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mapicomandas.SessionManager
 import com.example.mapicomandas.data.model.*
+import com.example.mapicomandas.data.ConfigService
 import com.example.mapicomandas.data.repository.RestauranteRepository
 import com.example.mapicomandas.util.PrinterService
 import com.example.mapicomandas.util.TicketData
@@ -48,6 +49,7 @@ class CobroViewModel @Inject constructor(
     private val repo: RestauranteRepository,
     val session: SessionManager,
     private val printerService: PrinterService,
+    private val configService: ConfigService,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -212,9 +214,11 @@ class CobroViewModel @Inject constructor(
                 )
             }
 
-            // Modo Comida Rápida: si la comanda era PARA LLEVAR, abrir una nueva sin cerrar la ventana
+            // Modo Comida Rápida: leído de ConfiguracionSistema (REST_COMIDA_RAPIDA),
+            // con fallback al toggle local.
             val esParaLlevar = _uiState.value.comanda?.tipoServicio == TipoServicio.PARA_LLEVAR
-            val nuevaComanda = if (session.fastFoodActivo && esParaLlevar) {
+            val comidaRapida = configService.bool("REST_COMIDA_RAPIDA", session.fastFoodActivo)
+            val nuevaComanda = if (comidaRapida && esParaLlevar) {
                 runCatching {
                     repo.abrirComandaSinMesa(
                         tipoServicio = TipoServicio.PARA_LLEVAR,

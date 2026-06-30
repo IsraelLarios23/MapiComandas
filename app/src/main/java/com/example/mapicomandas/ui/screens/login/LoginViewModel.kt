@@ -3,6 +3,7 @@ package com.example.mapicomandas.ui.screens.login
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mapicomandas.SessionManager
+import com.example.mapicomandas.data.ConfigService
 import com.example.mapicomandas.data.repository.RestauranteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +22,8 @@ data class LoginUiState(
 @HiltViewModel
 class LoginViewModel @Inject constructor(
     private val repo: RestauranteRepository,
-    val session: SessionManager
+    val session: SessionManager,
+    private val configService: ConfigService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
@@ -42,6 +44,7 @@ class LoginViewModel @Inject constructor(
                 val usuario = repo.login(s.usuario.trim(), s.password)
                 if (usuario != null) {
                     session.iniciarSesion(usuario.idUsuario, usuario.nombre)
+                    configService.cargar()   // cachea ConfiguracionSistema (REST_*)
                     _uiState.value = _uiState.value.copy(cargando = false, autenticado = true)
                 } else {
                     _uiState.value = _uiState.value.copy(
