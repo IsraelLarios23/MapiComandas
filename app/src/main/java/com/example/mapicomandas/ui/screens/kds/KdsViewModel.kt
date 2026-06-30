@@ -63,7 +63,7 @@ class KdsViewModel @Inject constructor(
                 val platillos = repo.obtenerPlatillosCocina(_uiState.value.puntoSeleccionado)
                 val grupos = agruparPorComanda(platillos)
                 _uiState.value = _uiState.value.copy(grupos = grupos, error = null)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -92,7 +92,7 @@ class KdsViewModel @Inject constructor(
             try {
                 repo.marcarListo(idDetalle)
                 cargarPlatillos()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -103,7 +103,7 @@ class KdsViewModel @Inject constructor(
             try {
                 repo.marcarEntregado(idDetalle)
                 cargarPlatillos()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }

@@ -53,7 +53,7 @@ class MesasViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     mesas = mesas, zonas = zonas, meseros = meseros, cargando = false, error = null
                 )
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(cargando = false, error = e.message)
             }
         }
@@ -74,7 +74,7 @@ class MesasViewModel @Inject constructor(
             try {
                 val mesas = repo.obtenerMesas(_uiState.value.zonaSeleccionada)
                 _uiState.value = _uiState.value.copy(mesas = mesas, error = null)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -86,7 +86,7 @@ class MesasViewModel @Inject constructor(
             try {
                 val mesas = repo.obtenerMesas(zona)
                 _uiState.value = _uiState.value.copy(mesas = mesas)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -109,7 +109,7 @@ class MesasViewModel @Inject constructor(
                 )
                 refrescarMesas()
                 onSuccess(idComanda)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -120,7 +120,7 @@ class MesasViewModel @Inject constructor(
             try {
                 repo.cambiarMesero(idComanda, idMeseroNuevo)
                 refrescarMesas()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -131,7 +131,7 @@ class MesasViewModel @Inject constructor(
             try {
                 repo.cambiarMesa(idComanda, idMesaActual, idMesaNueva)
                 refrescarMesas()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }

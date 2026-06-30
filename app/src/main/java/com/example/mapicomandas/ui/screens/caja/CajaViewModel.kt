@@ -40,7 +40,7 @@ class CajaViewModel @Inject constructor(
             try {
                 val resumen = repo.obtenerResumenCaja(session.idCaja, session.idTienda)
                 _uiState.value = _uiState.value.copy(resumen = resumen, cargando = false, error = null)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(cargando = false, error = e.message)
             }
         }
@@ -53,7 +53,7 @@ class CajaViewModel @Inject constructor(
                 session.setCajaHabilitada(true)
                 _uiState.value = _uiState.value.copy(exito = "Caja habilitada")
                 cargarResumen()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -76,7 +76,7 @@ class CajaViewModel @Inject constructor(
                     exito = "Movimiento registrado"
                 )
                 cargarResumen()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -91,7 +91,7 @@ class CajaViewModel @Inject constructor(
                     exito = "Corte Z realizado"
                 )
                 cargarResumen()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }

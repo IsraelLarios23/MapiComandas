@@ -62,7 +62,7 @@ class CobroViewModel @Inject constructor(
                     propinaSugerida = propina, propinaIngresada = propina,
                     cargando = false, error = null
                 )
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(cargando = false, error = e.message)
             }
         }
@@ -131,7 +131,7 @@ class CobroViewModel @Inject constructor(
                     cargando = false,
                     cobrado = true
                 )
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(cargando = false, error = e.message)
             }
         }

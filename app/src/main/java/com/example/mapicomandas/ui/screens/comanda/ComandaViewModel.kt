@@ -58,7 +58,7 @@ class ComandaViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     comanda = comanda, lineas = lineas, cargando = false, error = null
                 )
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(cargando = false, error = e.message)
             }
         }
@@ -70,7 +70,7 @@ class ComandaViewModel @Inject constructor(
                 val categorias = repo.obtenerCategorias()
                 val articulos = repo.obtenerArticulos()
                 _uiState.value = _uiState.value.copy(categorias = categorias, articulos = articulos)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -82,7 +82,7 @@ class ComandaViewModel @Inject constructor(
             try {
                 val articulos = repo.obtenerArticulos(idCategoria = idCategoria)
                 _uiState.value = _uiState.value.copy(articulos = articulos)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -95,7 +95,7 @@ class ComandaViewModel @Inject constructor(
                 try {
                     val articulos = repo.obtenerArticulos(nombre = query)
                     _uiState.value = _uiState.value.copy(articulos = articulos)
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     _uiState.value = _uiState.value.copy(error = e.message)
                 }
             }
@@ -111,7 +111,7 @@ class ComandaViewModel @Inject constructor(
                 } else {
                     _uiState.value = _uiState.value.copy(articulos = articulos)
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -133,7 +133,7 @@ class ComandaViewModel @Inject constructor(
                     kitSlots = slots,
                     mostrarKitSelector = true
                 )
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -151,7 +151,7 @@ class ComandaViewModel @Inject constructor(
                         mostrarModificadores = true
                     )
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -181,7 +181,7 @@ class ComandaViewModel @Inject constructor(
                     componentesKit = null
                 )
                 cargarComanda()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -218,7 +218,7 @@ class ComandaViewModel @Inject constructor(
                 )
                 _uiState.value = _uiState.value.copy(mostrarModificadores = false)
                 cargarComanda()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -246,7 +246,7 @@ class ComandaViewModel @Inject constructor(
                 )
                 _uiState.value = _uiState.value.copy(mostrarKitSelector = false)
                 cargarComanda()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -257,7 +257,7 @@ class ComandaViewModel @Inject constructor(
             try {
                 repo.cancelarLinea(idDetalle)
                 cargarComanda()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -269,7 +269,7 @@ class ComandaViewModel @Inject constructor(
                 repo.enviarACocina(idComanda)
                 cargarComanda()
                 _uiState.value = _uiState.value.copy(exito = "Enviado a cocina")
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -280,7 +280,7 @@ class ComandaViewModel @Inject constructor(
             try {
                 repo.imprimirComanda(idComanda, soloRecienEnviadas = false, todasLasLineas = true)
                 _uiState.value = _uiState.value.copy(exito = "Impresión enviada")
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -292,7 +292,7 @@ class ComandaViewModel @Inject constructor(
                 repo.separarCantidad(idDetalle, cantidadMover, nuevoLugar)
                 _uiState.value = _uiState.value.copy(mostrarDividir = false)
                 cargarComanda()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }

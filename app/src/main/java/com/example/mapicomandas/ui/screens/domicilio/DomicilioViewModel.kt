@@ -50,7 +50,7 @@ class DomicilioViewModel @Inject constructor(
                     cargando = false,
                     error = null
                 )
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(cargando = false, error = e.message)
             }
         }
@@ -74,7 +74,7 @@ class DomicilioViewModel @Inject constructor(
                 cargarDatos()
                 _uiState.value = _uiState.value.copy(mostrarNuevoPedido = false)
                 onSuccess(id)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -85,7 +85,7 @@ class DomicilioViewModel @Inject constructor(
             try {
                 repo.actualizarStatusEntrega(idComanda, status)
                 cargarDatos()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -97,7 +97,7 @@ class DomicilioViewModel @Inject constructor(
                 repo.guardarRepartidor(id, nombre, tel, activo)
                 val repartidores = repo.obtenerRepartidores()
                 _uiState.value = _uiState.value.copy(repartidores = repartidores, exito = "Repartidor guardado")
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
@@ -109,7 +109,7 @@ class DomicilioViewModel @Inject constructor(
                 repo.guardarZonaReparto(id, nombre, cargo, activo)
                 val zonas = repo.obtenerZonasReparto()
                 _uiState.value = _uiState.value.copy(zonas = zonas, exito = "Zona guardada")
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }

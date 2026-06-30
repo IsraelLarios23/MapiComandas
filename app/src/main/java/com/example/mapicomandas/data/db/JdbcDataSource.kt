@@ -30,10 +30,20 @@ class JdbcDataSource @Inject constructor(
     suspend fun getConnection(): Connection = withContext(Dispatchers.IO) {
         val conn = _connection
         if (conn != null && !conn.isClosed) return@withContext conn
-        Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver")
-        val newConn = DriverManager.getConnection(buildUrl())
-        _connection = newConn
-        newConn
+        try {
+            // Registrar el driver explícitamente (Android no usa ServiceLoader de JDBC)
+            val driver = Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver")
+                .getDeclaredConstructor().newInstance() as java.sql.Driver
+            DriverManager.registerDriver(driver)
+            val newConn = DriverManager.getConnection(buildUrl())
+            _connection = newConn
+            newConn
+        } catch (t: Throwable) {
+            // Convertir cualquier Error del driver (NoClassDefFound, etc.) en Exception capturable
+            throw java.sql.SQLException(
+                "Error de conexión JDBC: ${t.javaClass.simpleName}: ${t.message}", t
+            )
+        }
     }
 
     suspend fun <T> query(sql: String, params: List<Any?> = emptyList(), map: (ResultSet) -> T): List<T> =
