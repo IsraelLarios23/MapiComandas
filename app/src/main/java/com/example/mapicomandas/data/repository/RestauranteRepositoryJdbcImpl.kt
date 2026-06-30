@@ -798,9 +798,62 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         )
     }
 
-    override suspend fun realizarCorteZ(idCaja: Int, idUsuario: Int) {
-        // El corte Z de MapiPOS (tabla CorteCaja) tiene muchas columnas obligatorias
-        // calculadas. Pendiente de implementar contra el flujo real. Ver memoria.
+    override suspend fun realizarCorteZ(idCaja: Int, idUsuario: Int): Unit = db.inTransaction { conn ->
+        val idTienda = session.idTienda
+
+        // Totales de ventas del día por medio de pago (Ventas no tiene IdCaja → por tienda+fecha)
+        val ventas = conn.queryOne(
+            """SELECT
+               ISNULL(SUM(CASE WHEN LOWER(fp.Nombre) LIKE '%efectivo%' THEN pv.Monto ELSE 0 END),0) AS Efectivo,
+               ISNULL(SUM(CASE WHEN LOWER(fp.Nombre) LIKE '%tarjeta%' OR LOWER(fp.Nombre) LIKE '%credito%' OR LOWER(fp.Nombre) LIKE '%debito%' THEN pv.Monto ELSE 0 END),0) AS Tarjeta,
+               ISNULL(SUM(CASE WHEN LOWER(fp.Nombre) LIKE '%transfer%' THEN pv.Monto ELSE 0 END),0) AS Transferencia,
+               ISNULL(SUM(v.Total),0) AS Total
+               FROM dbo.Ventas v
+               INNER JOIN dbo.PagosVenta pv ON pv.IdVenta=v.IdVenta
+               INNER JOIN dbo.FormasPago fp ON fp.IdFormaPago=pv.IdFormaPago
+               WHERE v.IdTienda=? AND v.Fecha=CAST(GETDATE() AS DATE) AND ISNULL(v.Cancelada,0)=0""",
+            listOf(idTienda)
+        ) { rs ->
+            mapOf(
+                "efectivo" to rs.getDouble("Efectivo"),
+                "tarjeta" to rs.getDouble("Tarjeta"),
+                "transfer" to rs.getDouble("Transferencia"),
+                "total" to rs.getDouble("Total")
+            )
+        } ?: mapOf("efectivo" to 0.0, "tarjeta" to 0.0, "transfer" to 0.0, "total" to 0.0)
+
+        val mov = conn.queryOne(
+            """SELECT
+               ISNULL(SUM(CASE WHEN Tipo='I' THEN Monto ELSE 0 END),0) AS Ingresos,
+               ISNULL(SUM(CASE WHEN Tipo='R' THEN Monto ELSE 0 END),0) AS Retiros
+               FROM dbo.MovimientosCaja WHERE IdCaja=? AND CAST(Fecha AS DATE)=CAST(GETDATE() AS DATE)""",
+            listOf(idCaja)
+        ) { rs -> Pair(rs.getDouble("Ingresos"), rs.getDouble("Retiros")) } ?: Pair(0.0, 0.0)
+
+        val efectivo = ventas["efectivo"] as Double
+        val tarjeta = ventas["tarjeta"] as Double
+        val transfer = ventas["transfer"] as Double
+        val totalVentas = ventas["total"] as Double
+        val otros = (totalVentas - efectivo - tarjeta - transfer).coerceAtLeast(0.0)
+        val incrementos = mov.first
+        val retiros = mov.second
+        val fondoInicial = 0.0
+        val efectivoEsperado = fondoInicial + efectivo + incrementos - retiros
+
+        val folio = "Z" + java.time.LocalDateTime.now()
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"))
+
+        conn.executeUpdate(
+            """INSERT INTO dbo.CorteCaja
+               (Folio,Fecha,HoraInicio,HoraFin,IdTienda,IdCajero,FondoInicial,
+                VentasEfectivo,VentasTarjeta,VentasTransferencia,VentasOtros,TotalVentas,
+                Retiros,Incrementos,EfectivoEsperado,EfectivoReal,Diferencia,Estatus,IdCaja)
+               VALUES (?,CAST(GETDATE() AS DATE),CAST(GETDATE() AS TIME),CAST(GETDATE() AS TIME),
+                       ?,?,?,?,?,?,?,?,?,?,?,?,0,'Cerrada',?)""",
+            listOf(folio, idTienda, idUsuario, fondoInicial,
+                   efectivo, tarjeta, transfer, otros, totalVentas,
+                   retiros, incrementos, efectivoEsperado, efectivoEsperado, idCaja)
+        )
     }
 
     // ─────────────────────────────────────────────────────────────────────────

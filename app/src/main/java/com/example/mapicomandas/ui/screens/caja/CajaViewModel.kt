@@ -82,6 +82,20 @@ class CajaViewModel @Inject constructor(
         }
     }
 
+    fun realizarCorteX() {
+        viewModelScope.launch {
+            try {
+                val resumen = repo.obtenerResumenCaja(session.idCaja, session.idTienda)
+                _uiState.value = _uiState.value.copy(
+                    resumen = resumen,
+                    exito = "Corte X generado (parcial, sin cerrar turno)"
+                )
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
     fun realizarCorteZ() {
         viewModelScope.launch {
             try {

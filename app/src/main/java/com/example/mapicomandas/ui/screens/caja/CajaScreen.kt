@@ -22,12 +22,19 @@ fun CajaScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(uiState.error) {
-        uiState.error?.let { snackbarHostState.showSnackbar(it); viewModel.limpiarMensajes() }
+        uiState.error?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.limpiarMensajes()
+        }
     }
     LaunchedEffect(uiState.exito) {
-        uiState.exito?.let { snackbarHostState.showSnackbar(it); viewModel.limpiarMensajes() }
+        uiState.exito?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.limpiarMensajes()
+        }
     }
 
     Scaffold(
@@ -164,7 +171,7 @@ fun CajaScreen(
                         icono = Icons.Default.Print,
                         color = Color(0xFF2196F3),
                         modifier = Modifier.weight(1f),
-                        onClick = { viewModel.cargarResumen() }
+                        onClick = { viewModel.realizarCorteX() }
                     )
                     BotonCaja(
                         texto = "Corte Z",
