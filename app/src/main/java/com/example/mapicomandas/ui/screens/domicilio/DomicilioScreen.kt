@@ -22,6 +22,7 @@ import com.example.mapicomandas.data.model.*
 fun DomicilioScreen(
     onVolver: () -> Unit,
     onAbrirComanda: (Int) -> Unit,
+    onIrHome: () -> Unit = {},
     viewModel: DomicilioViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -55,6 +56,9 @@ fun DomicilioScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onIrHome) {
+                        Icon(Icons.Default.Home, "Inicio")
+                    }
                     IconButton(onClick = { viewModel.setMostrarEditarRepartidores(true) }) {
                         Icon(Icons.Default.Person, "Repartidores")
                     }

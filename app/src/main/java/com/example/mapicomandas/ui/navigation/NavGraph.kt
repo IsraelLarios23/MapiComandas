@@ -142,7 +142,12 @@ fun MapiNavGraph(sessionManager: SessionManager) {
         composable(Routes.DOMICILIO) {
             DomicilioScreen(
                 onVolver = { navController.popBackStack() },
-                onAbrirComanda = { idComanda -> navController.navigate(Routes.comanda(idComanda)) }
+                onAbrirComanda = { idComanda -> navController.navigate(Routes.comanda(idComanda)) },
+                onIrHome = {
+                    navController.navigate(Routes.HOME) {
+                        popUpTo(Routes.HOME) { inclusive = true }
+                    }
+                }
             )
         }
 
