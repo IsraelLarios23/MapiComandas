@@ -293,6 +293,45 @@ fun CobroScreen(
                         Divider(modifier = Modifier.padding(vertical = 8.dp))
                     }
 
+                    // Comprobante de la última transacción NetPay aprobada
+                    uiState.ultimoNetPay?.let { np ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.CreditCard, null, tint = Color(0xFF2E7D32), modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Terminal NetPay — aprobada", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+                                val tarjeta = listOfNotNull(np.marca, np.ultimos4?.let { "****$it" }).joinToString(" ")
+                                Text("Auth: ${np.authCode ?: "-"}   $tarjeta", fontSize = 12.sp)
+                                Spacer(Modifier.height(6.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = { viewModel.reimprimirVoucherNetPay("CLIENTE") },
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(Icons.Default.Print, null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Reimprimir", fontSize = 12.sp)
+                                    }
+                                    OutlinedButton(
+                                        onClick = { viewModel.cancelarTransaccionNetPay() },
+                                        modifier = Modifier.weight(1f),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828))
+                                    ) {
+                                        Icon(Icons.Default.Cancel, null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Cancelar", fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    }
+
                     if (montoCompleto) {
                         Text(
                             "Monto completo ✓",

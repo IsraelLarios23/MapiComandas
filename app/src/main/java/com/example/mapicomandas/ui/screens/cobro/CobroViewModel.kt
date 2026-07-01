@@ -39,6 +39,7 @@ data class CobroUiState(
     val nuevaComandaFastFood: Int? = null,   // id de la nueva comanda en modo fast food
     val procesandoNetPay: Boolean = false,
     val mensajeNetPay: String? = null,
+    val ultimoNetPay: com.example.mapicomandas.data.netpay.NetPayResultado? = null,
     // División de cuenta
     val modoDivision: ModoDivision = ModoDivision.NINGUNO,
     val partesDivision: Int = 1,
@@ -135,8 +136,11 @@ class CobroViewModel @Inject constructor(
                 recalcularPagos(pagos)
                 _uiState.value = _uiState.value.copy(
                     procesandoNetPay = false,
-                    mensajeNetPay = "Pago aprobado · auth ${res.authCode ?: "-"} $tarjeta".trim()
+                    mensajeNetPay = "Pago aprobado · auth ${res.authCode ?: "-"} $tarjeta".trim(),
+                    ultimoNetPay = res
                 )
+                // Imprime el comprobante (voucher) automáticamente si hay impresora
+                imprimirVoucherNetPay(res, "COMERCIO")
             } else {
                 _uiState.value = _uiState.value.copy(
                     procesandoNetPay = false,
@@ -156,6 +160,60 @@ class CobroViewModel @Inject constructor(
 
     fun limpiarMensajeNetPay() {
         _uiState.value = _uiState.value.copy(mensajeNetPay = null)
+    }
+
+    /** Imprime el comprobante NetPay en la impresora de tickets configurada. */
+    private fun imprimirVoucherNetPay(
+        res: com.example.mapicomandas.data.netpay.NetPayResultado,
+        copia: String
+    ) {
+        val impresora = session.impresoraTicket
+        if (impresora.isBlank()) return
+        viewModelScope.launch {
+            val cfg = runCatching { netPayService.obtenerConfig() }.getOrNull()
+            val lineas = com.example.mapicomandas.util.NetPayVoucher.construir(
+                res = res,
+                storeId = cfg?.storeId ?: "",
+                serial = cfg?.serialNumber ?: "",
+                fechaHora = fechaActual(),
+                copia = copia
+            )
+            val error = printerService.imprimir(impresora, lineas)
+            _uiState.value = _uiState.value.copy(
+                mensajeNetPay = error ?: "Comprobante impreso ($copia)"
+            )
+        }
+    }
+
+    /** Reimprime el comprobante de la última transacción NetPay aprobada. */
+    fun reimprimirVoucherNetPay(copia: String = "CLIENTE") {
+        val res = _uiState.value.ultimoNetPay ?: return
+        imprimirVoucherNetPay(res, copia)
+    }
+
+    /** Cancela (void) la última transacción NetPay del día vía orderId. */
+    fun cancelarTransaccionNetPay() {
+        val res = _uiState.value.ultimoNetPay ?: return
+        val orderId = res.orderId ?: return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(procesandoNetPay = true, mensajeNetPay = "Cancelando transacción…")
+            val ok = runCatching { netPayService.cancelar(orderId) }.getOrDefault(false)
+            if (ok) {
+                // Quita el pago con esa referencia y limpia el comprobante
+                val pagos = _uiState.value.pagos.filterNot { it.referencia == (res.authCode ?: res.orderId) }.toMutableList()
+                recalcularPagos(pagos)
+                _uiState.value = _uiState.value.copy(
+                    procesandoNetPay = false,
+                    ultimoNetPay = null,
+                    mensajeNetPay = "Transacción cancelada"
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    procesandoNetPay = false,
+                    mensajeNetPay = "No se pudo cancelar la transacción"
+                )
+            }
+        }
     }
 
     fun editarPago(idFormaPago: Int, nuevoMonto: Double) {
