@@ -670,6 +670,9 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             )
         }
 
+        // Descuento de inventario (best-effort, tolerante a esquema y controlado por flag).
+        descontarInventarioVenta(conn, idAlmacen, idUsuario, idVenta, lineas)
+
         // Pagos (columna real: Monto). Pagos múltiples → PagosVenta + Pagos núcleo.
         val listaPagos = pagos ?: listOf(PagoVenta(idFormaPago, "", total))
         listaPagos.forEach { p ->
@@ -701,6 +704,111 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             listOf(idVenta, idComanda)
         )
         idVenta
+        }
+    }
+
+    /**
+     * Descuenta inventario por la venta, replicando InventarioService.RegistrarMovimiento('S')
+     * de MapiPOS: por cada línea que maneja inventario inserta un movimiento de salida en
+     * dbo.movimientos_inventario y actualiza dbo.Existencias. Los artículos compuestos
+     * (dbo.ArticulosCompuestos) explotan sus componentes.
+     *
+     * Es tolerante a esquema (no hace nada si faltan las tablas) y NO bloquea el cobro:
+     * cualquier fallo se ignora (best-effort) para no impedir cerrar una comanda ya servida.
+     * Se activa con ConfiguracionSistema REST_DESCUENTA_INVENTARIO = TRUE/1.
+     */
+    private fun descontarInventarioVenta(
+        conn: java.sql.Connection,
+        idAlmacen: Int,
+        idUsuario: Int,
+        idVenta: Int,
+        lineas: List<Map<String, Any?>>
+    ) {
+        runCatching {
+            // Tablas requeridas
+            val existeEsquema = conn.queryOne(
+                """SELECT CASE WHEN OBJECT_ID('dbo.movimientos_inventario','U') IS NOT NULL
+                           AND OBJECT_ID('dbo.Existencias','U') IS NOT NULL THEN 1 ELSE 0 END AS Ok""",
+                emptyList()
+            ) { rs -> rs.getInt("Ok") } ?: 0
+            if (existeEsquema != 1) return
+
+            // Flag de configuración (opt-in)
+            val activo = runCatching {
+                conn.queryOne(
+                    "SELECT TOP 1 Valor FROM dbo.ConfiguracionSistema WHERE Clave='REST_DESCUENTA_INVENTARIO'",
+                    emptyList()
+                ) { rs -> rs.getString("Valor") }
+            }.getOrNull()
+            val habilitado = activo?.let { it.equals("TRUE", true) || it.trim() == "1" || it.equals("SI", true) } ?: false
+            if (!habilitado) return
+
+            val tieneCompuestos = conn.queryOne(
+                "SELECT CASE WHEN OBJECT_ID('dbo.ArticulosCompuestos','U') IS NOT NULL THEN 1 ELSE 0 END AS Ok",
+                emptyList()
+            ) { rs -> rs.getInt("Ok") } ?: 0
+
+            lineas.forEach { l ->
+                val idArticulo = l["idArticulo"] as? Int ?: return@forEach
+                val cantidad = l["cantidad"] as? Double ?: return@forEach
+                if (cantidad <= 0) return@forEach
+
+                // ¿Maneja inventario? (tolerante: si la columna no existe, se asume que sí)
+                val maneja = runCatching {
+                    conn.queryOne(
+                        """SELECT CASE WHEN COL_LENGTH('dbo.Articulos','ManejaInventario') IS NULL THEN 1
+                                       ELSE ISNULL(ManejaInventario,0) END AS M
+                           FROM dbo.Articulos WHERE IdArticulo=?""",
+                        listOf(idArticulo)
+                    ) { rs -> rs.getInt("M") }
+                }.getOrNull() ?: 1
+                if (maneja != 1) return@forEach
+
+                // Componentes (compuesto) o el propio artículo
+                val objetivos: List<Pair<Int, Double>> = if (tieneCompuestos == 1) {
+                    val comps = runCatching {
+                        conn.query(
+                            """SELECT IdArticuloComponente, ISNULL(Cantidad,1) AS Cantidad
+                               FROM dbo.ArticulosCompuestos WHERE IdArticuloCompuesto=?""",
+                            listOf(idArticulo)
+                        ) { rs -> rs.getInt("IdArticuloComponente") to rs.getDouble("Cantidad") }
+                    }.getOrDefault(emptyList())
+                    if (comps.isNotEmpty())
+                        comps.map { (idc, factor) -> idc to cantidad * (if (factor <= 0) 1.0 else factor) }
+                    else listOf(idArticulo to cantidad)
+                } else listOf(idArticulo to cantidad)
+
+                objetivos.forEach { (idArt, cant) ->
+                    if (idArt <= 0 || cant <= 0) return@forEach
+                    val existenciaAnterior = runCatching {
+                        conn.queryOne(
+                            "SELECT ISNULL(Existencia,0) AS E FROM dbo.Existencias WHERE IdArticulo=? AND IdAlmacen=?",
+                            listOf(idArt, idAlmacen)
+                        ) { rs -> rs.getDouble("E") }
+                    }.getOrNull() ?: 0.0
+                    val existenciaNueva = existenciaAnterior - cant
+
+                    conn.executeUpdate(
+                        """INSERT INTO dbo.movimientos_inventario
+                           (fecha, tipo_movimiento, id_articulo, id_almacen, cantidad,
+                            existencia_anterior, existencia_nueva, id_documento, origen_documento, usuario_id, observaciones)
+                           VALUES (GETDATE(),'S',?,?,?,?,?,?,'VENTA',?,?)""",
+                        listOf(idArt, idAlmacen, cant, existenciaAnterior, existenciaNueva,
+                               idVenta, idUsuario, "Salida por venta (comanda)")
+                    )
+                    // Upsert atómico de existencia (igual que InventarioService.ActualizarExistencias)
+                    conn.executeUpdate(
+                        """UPDATE dbo.Existencias
+                             SET Existencia = Existencia - ?, FechaUltimoMovimiento = GETDATE()
+                           WHERE IdArticulo=? AND IdAlmacen=?;
+                           IF @@ROWCOUNT = 0
+                             INSERT INTO dbo.Existencias
+                               (IdArticulo, IdAlmacen, Existencia, ExistenciaMinima, ExistenciaMaxima, FechaUltimoMovimiento)
+                             VALUES (?,?,?,0,0,GETDATE());""",
+                        listOf(cant, idArt, idAlmacen, idArt, idAlmacen, -cant)
+                    )
+                }
+            }
         }
     }
 
