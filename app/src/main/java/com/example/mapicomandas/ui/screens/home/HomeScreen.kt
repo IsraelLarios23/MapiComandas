@@ -75,10 +75,12 @@ fun HomeScreen(
             )
         }
     ) { padding ->
+      Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        val clienteLogo by viewModel.clienteLogo.collectAsState()
+        com.example.mapicomandas.ui.components.FondoLogoIntermitente(clienteLogoBase64 = clienteLogo)
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
         ) {
             val conectado by viewModel.conectado.collectAsState()
             if (!conectado) {
@@ -124,6 +126,7 @@ fun HomeScreen(
                 }
             }
         }
+      }
     }
 }
 
