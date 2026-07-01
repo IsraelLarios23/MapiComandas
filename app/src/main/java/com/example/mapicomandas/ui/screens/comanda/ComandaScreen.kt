@@ -44,6 +44,7 @@ fun ComandaScreen(
     val uiState by viewModel.uiState.collectAsState()
     var codigoInput by remember { mutableStateOf("") }
     var articuloPendiente by remember { mutableStateOf<Articulo?>(null) }
+    var mostrarCancelarComanda by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -84,6 +85,9 @@ fun ComandaScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { mostrarCancelarComanda = true }) {
+                        Icon(Icons.Default.Cancel, "Cancelar comanda")
+                    }
                     IconButton(onClick = onIrHome) {
                         Icon(Icons.Default.Home, "Inicio")
                     }
@@ -287,6 +291,21 @@ fun ComandaScreen(
                 )
             },
             onDismiss = { viewModel.setMostrarDividir(false) }
+        )
+    }
+
+    // Diálogo cancelar comanda (autorización de supervisor)
+    if (mostrarCancelarComanda) {
+        com.example.mapicomandas.ui.components.DialogoSupervisor(
+            titulo = "Cancelar comanda",
+            mensaje = "Esta acción cancela toda la comanda y libera la mesa. Autoriza con supervisor.",
+            onConfirmar = { u, p ->
+                viewModel.cancelarComanda(u, p) {
+                    mostrarCancelarComanda = false
+                    onVolver()
+                }
+            },
+            onCancelar = { mostrarCancelarComanda = false }
         )
     }
 }

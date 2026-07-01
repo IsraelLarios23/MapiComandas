@@ -32,6 +32,7 @@ object Routes {
     const val CAJA = "caja"
     const val PUNTOS_IMPRESION = "puntos_impresion"
     const val REPORTES = "reportes"
+    const val VENTAS = "ventas"
 
     fun comanda(idComanda: Int) = "comanda/$idComanda"
     fun cobro(idComanda: Int) = "cobro/$idComanda"
@@ -86,6 +87,7 @@ fun MapiNavGraph(sessionManager: SessionManager) {
                 onIrASettings = { navController.navigate(Routes.SETTINGS) },
                 onIrAPuntosImpresion = { navController.navigate(Routes.PUNTOS_IMPRESION) },
                 onIrAReportes = { navController.navigate(Routes.REPORTES) },
+                onIrAVentas = { navController.navigate(Routes.VENTAS) },
                 onCerrarSesion = {
                     sessionManager.cerrarSesion()
                     navController.navigate(Routes.LOGIN) {
@@ -168,6 +170,13 @@ fun MapiNavGraph(sessionManager: SessionManager) {
 
         composable(Routes.REPORTES) {
             com.example.mapicomandas.ui.screens.reportes.ReportesScreen(
+                onVolver = { navController.popBackStack() },
+                onIrHome = { irHome() }
+            )
+        }
+
+        composable(Routes.VENTAS) {
+            com.example.mapicomandas.ui.screens.ventas.VentasScreen(
                 onVolver = { navController.popBackStack() },
                 onIrHome = { irHome() }
             )

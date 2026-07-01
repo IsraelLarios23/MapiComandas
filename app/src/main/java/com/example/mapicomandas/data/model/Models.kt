@@ -305,6 +305,17 @@ data class TicketsCocina(
     val puntos: List<PuntoImpresionTicket>
 )
 
+// ─── Ventas (reimprimir / cancelar) ────────────────────────────────────────────
+
+data class VentaDia(
+    val idVenta: Int,
+    val folio: String,
+    val hora: String,
+    val total: Double,
+    val cancelada: Boolean,
+    val idComanda: Int?
+)
+
 // ─── Reportes ─────────────────────────────────────────────────────────────────
 
 data class ResumenDia(

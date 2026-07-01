@@ -69,6 +69,118 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
                FROM dbo.Usuarios WHERE Activo = 1 ORDER BY Nombre"""
         ) { rs -> rs.toUsuario() }
 
+    override suspend fun autorizarSupervisor(usuario: String, password: String): Boolean =
+        login(usuario, password) != null
+
+    // ── Ventas / cancelaciones ────────────────────────────────────────────────
+
+    override suspend fun obtenerVentasDia(): List<VentaDia> =
+        db.query(
+            """SELECT v.IdVenta, v.Folio, CONVERT(NVARCHAR(8), v.Hora, 108) AS Hora,
+                      ISNULL(v.Total,0) AS Total, ISNULL(v.Cancelada,0) AS Cancelada, v.IdComanda
+               FROM dbo.Ventas v
+               WHERE v.IdTienda=? AND v.Fecha=CAST(GETDATE() AS DATE)
+               ORDER BY v.IdVenta DESC""",
+            listOf(session.idTienda)
+        ) { rs ->
+            VentaDia(
+                idVenta = rs.getInt("IdVenta"),
+                folio = rs.getString("Folio") ?: "",
+                hora = rs.getString("Hora") ?: "",
+                total = rs.getDouble("Total"),
+                cancelada = rs.getBoolean("Cancelada"),
+                idComanda = rs.getObject("IdComanda") as? Int
+            )
+        }
+
+    override suspend fun construirTicketVenta(idVenta: Int): List<String> {
+        val venta = db.queryOne(
+            """SELECT v.Folio, CONVERT(NVARCHAR(10),v.Fecha,103) AS Fecha, CONVERT(NVARCHAR(8),v.Hora,108) AS Hora,
+                      ISNULL(v.Subtotal,0) AS Subtotal, ISNULL(v.Descuento,0) AS Descuento,
+                      ISNULL(v.IVA,0) AS IVA, ISNULL(v.Total,0) AS Total, v.IdUsuario, ISNULL(v.Cancelada,0) AS Cancelada
+               FROM dbo.Ventas v WHERE v.IdVenta=?""",
+            listOf(idVenta)
+        ) { rs ->
+            mapOf(
+                "folio" to (rs.getString("Folio") ?: ""),
+                "fecha" to (rs.getString("Fecha") ?: ""),
+                "hora" to (rs.getString("Hora") ?: ""),
+                "subtotal" to rs.getDouble("Subtotal"),
+                "descuento" to rs.getDouble("Descuento"),
+                "iva" to rs.getDouble("IVA"),
+                "total" to rs.getDouble("Total"),
+                "cancelada" to rs.getBoolean("Cancelada")
+            )
+        } ?: return listOf("Venta no encontrada")
+
+        val renglones = db.query(
+            "SELECT Descripcion, Cantidad, Total FROM dbo.DetalleVentas WHERE IdVenta=? ORDER BY Linea",
+            listOf(idVenta)
+        ) { rs ->
+            com.example.mapicomandas.util.TicketRenglon(
+                rs.getDouble("Cantidad"), rs.getString("Descripcion") ?: "", rs.getDouble("Total")
+            )
+        }
+        val pagos = db.query(
+            """SELECT fp.Nombre, pv.Monto, ISNULL(pv.Referencia,'') AS Referencia
+               FROM dbo.PagosVenta pv INNER JOIN dbo.FormasPago fp ON fp.IdFormaPago=pv.IdFormaPago
+               WHERE pv.IdVenta=?""",
+            listOf(idVenta)
+        ) { rs ->
+            com.example.mapicomandas.util.TicketPago(rs.getString("Nombre") ?: "", rs.getDouble("Monto"), rs.getString("Referencia") ?: "")
+        }
+        val empresa = runCatching {
+            db.queryOne("SELECT TOP 1 Valor FROM dbo.ConfiguracionSistema WHERE Clave IN ('GEN_RAZON_SOCIAL','RAZON_SOCIAL')", emptyList()) { it.getString("Valor") }
+        }.getOrNull() ?: ""
+
+        return com.example.mapicomandas.util.TicketFormatter.construir(
+            com.example.mapicomandas.util.TicketData(
+                empresa = empresa,
+                folio = "T-${venta["folio"]}" + (if (venta["cancelada"] == true) " (CANCELADA)" else ""),
+                fecha = "${venta["fecha"]} ${venta["hora"]}",
+                caja = session.idCaja.toString(),
+                cajero = session.nombreUsuarioActual.ifBlank { session.idUsuario.toString() },
+                renglones = renglones,
+                subtotal = venta["subtotal"] as Double,
+                descuento = venta["descuento"] as Double,
+                impuesto = venta["iva"] as Double,
+                total = venta["total"] as Double,
+                pagado = pagos.sumOf { it.importe },
+                cambio = 0.0,
+                formaPago = pagos.joinToString(", ") { it.nombre },
+                pagos = pagos,
+                observaciones = "*** REIMPRESIÓN ***"
+            )
+        )
+    }
+
+    override suspend fun cancelarVenta(idVenta: Int) = db.inTransaction { conn ->
+        conn.executeUpdate("UPDATE dbo.Ventas SET Cancelada=1 WHERE IdVenta=?", listOf(idVenta))
+        // Marca la comanda asociada como cancelada
+        conn.executeUpdate(
+            "UPDATE dbo.MaestroComandas SET Status=6 WHERE IdVenta=?", listOf(idVenta)
+        )
+    }
+
+    override suspend fun cancelarComanda(idComanda: Int) = db.inTransaction { conn ->
+        val idMesa = conn.queryOne(
+            "SELECT IdMesa FROM dbo.MaestroComandas WHERE IdComanda=? AND Status NOT IN (5,6)",
+            listOf(idComanda)
+        ) { rs -> rs.getObject("IdMesa") } ?: return@inTransaction
+
+        conn.executeUpdate(
+            "UPDATE dbo.MaestroComandas SET Status=6, FechaCierre=GETDATE() WHERE IdComanda=?",
+            listOf(idComanda)
+        )
+        if (idMesa is Int) {
+            conn.executeUpdate(
+                """UPDATE dbo.Mesas SET Status=1
+                   WHERE IdMesa=? OR (IdGrupoMesa IS NOT NULL AND IdGrupoMesa=(SELECT IdGrupoMesa FROM dbo.Mesas WHERE IdMesa=?))""",
+                listOf(idMesa, idMesa)
+            )
+        }
+    }
+
     private data class UsuarioLogin(
         val idUsuario: Int,
         val usuario: String,

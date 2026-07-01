@@ -306,6 +306,23 @@ class ComandaViewModel @Inject constructor(
         }
     }
 
+    /** Cancela toda la comanda tras autorización de supervisor. */
+    fun cancelarComanda(usuario: String, password: String, onCancelada: () -> Unit) {
+        viewModelScope.launch {
+            try {
+                if (!repo.autorizarSupervisor(usuario, password)) {
+                    _uiState.value = _uiState.value.copy(error = "Autorización inválida")
+                    return@launch
+                }
+                repo.cancelarComanda(idComanda)
+                _uiState.value = _uiState.value.copy(exito = "Comanda cancelada")
+                onCancelada()
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
     fun setLineaSeleccionada(linea: LineaComanda?) {
         _uiState.value = _uiState.value.copy(lineaSeleccionada = linea)
     }

@@ -7,6 +7,16 @@ interface RestauranteRepository {
     // ── Login (usuarios MapiPOS) ──────────────────────────────────────────────
     suspend fun login(usuario: String, password: String): Usuario?
     suspend fun obtenerUsuarios(): List<Usuario>
+    /** Valida credenciales de un usuario (para autorización de supervisor). */
+    suspend fun autorizarSupervisor(usuario: String, password: String): Boolean
+
+    // ── Ventas / cancelaciones ────────────────────────────────────────────────
+    suspend fun obtenerVentasDia(): List<VentaDia>
+    /** Reconstruye las líneas de texto del ticket de venta (para reimprimir). */
+    suspend fun construirTicketVenta(idVenta: Int): List<String>
+    suspend fun cancelarVenta(idVenta: Int)
+    /** Cancela una comanda abierta (Status=6) y libera la mesa. */
+    suspend fun cancelarComanda(idComanda: Int)
 
     // ── Mesas ─────────────────────────────────────────────────────────────────
     suspend fun obtenerMesas(zona: String? = null): List<MesaUi>
