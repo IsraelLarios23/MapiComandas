@@ -102,6 +102,10 @@ interface RestauranteRepository {
     suspend fun obtenerResumenCaja(idCaja: Int, idTienda: Int): ResumenCaja
     suspend fun realizarCorteZ(idCaja: Int, idUsuario: Int)
 
+    // ── Reportes ──────────────────────────────────────────────────────────────
+    /** Reportes de un día (yyyy-MM-dd). Si es null, usa la fecha de hoy del servidor. */
+    suspend fun obtenerReportesDia(fecha: String?): ReportesDia
+
     // ── Configuración ─────────────────────────────────────────────────────────
     suspend fun obtenerConfiguracion(idTienda: Int, idCaja: Int): List<ConfigEntry>
     suspend fun guardarConfig(clave: String, valor: String)

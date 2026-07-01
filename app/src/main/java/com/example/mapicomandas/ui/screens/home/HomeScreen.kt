@@ -35,6 +35,7 @@ fun HomeScreen(
     onIrACaja: () -> Unit,
     onIrASettings: () -> Unit,
     onIrAPuntosImpresion: () -> Unit = {},
+    onIrAReportes: () -> Unit = {},
     onCerrarSesion: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -45,6 +46,7 @@ fun HomeScreen(
         FuncionHome("Cocina (KDS)", Icons.Default.Kitchen, Color(0xFF1A237E), onIrAKds),
         FuncionHome("Domicilio /\nPara Llevar", Icons.Default.DeliveryDining, Color(0xFF0277BD), onIrADomicilio),
         FuncionHome("Caja", Icons.Default.PointOfSale, Color(0xFF37474F), onIrACaja),
+        FuncionHome("Reportes", Icons.Default.BarChart, Color(0xFF00838F), onIrAReportes),
         FuncionHome("Puntos de\nImpresión", Icons.Default.Print, Color(0xFF00695C), onIrAPuntosImpresion),
         FuncionHome("Configuración", Icons.Default.Settings, Color(0xFF6A1B9A), onIrASettings),
     )

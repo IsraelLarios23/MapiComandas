@@ -305,6 +305,29 @@ data class TicketsCocina(
     val puntos: List<PuntoImpresionTicket>
 )
 
+// ─── Reportes ─────────────────────────────────────────────────────────────────
+
+data class ResumenDia(
+    val fecha: String,
+    val totalVentas: Double,
+    val numTickets: Int,
+    val ticketPromedio: Double,
+    val totalEfectivo: Double,
+    val totalTarjeta: Double,
+    val totalOtros: Double,
+    val totalDescuentos: Double
+)
+
+data class ReporteFila(val etiqueta: String, val cantidad: Double, val importe: Double)
+
+data class ReportesDia(
+    val resumen: ResumenDia,
+    val porFormaPago: List<ReporteFila>,
+    val porMesero: List<ReporteFila>,
+    val porCategoria: List<ReporteFila>,
+    val productosTop: List<ReporteFila>
+)
+
 // ─── Domicilio ────────────────────────────────────────────────────────────────
 
 data class Repartidor(

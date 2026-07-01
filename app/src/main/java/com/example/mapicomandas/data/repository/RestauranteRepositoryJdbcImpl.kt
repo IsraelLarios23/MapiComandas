@@ -1260,6 +1260,109 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // REPORTES
+    // ─────────────────────────────────────────────────────────────────────────
+
+    override suspend fun obtenerReportesDia(fecha: String?): ReportesDia {
+        val idTienda = session.idTienda
+        // Predicado de fecha reutilizable: por parámetro o el día de hoy del servidor
+        val filtroFecha = if (fecha != null) "v.Fecha = ?" else "v.Fecha = CAST(GETDATE() AS DATE)"
+        fun params(vararg extra: Any?): List<Any?> =
+            (if (fecha != null) listOf<Any?>(idTienda, fecha) else listOf<Any?>(idTienda)) + extra.toList()
+
+        // Resumen general
+        val resumen = db.queryOne(
+            """SELECT
+                 CONVERT(NVARCHAR(10), ${if (fecha != null) "CAST(? AS DATE)" else "CAST(GETDATE() AS DATE)"}, 23) AS Fecha,
+                 ISNULL(SUM(v.Total),0) AS TotalVentas,
+                 COUNT(v.IdVenta) AS NumTickets,
+                 ISNULL(SUM(v.Descuento),0) AS TotalDescuentos
+               FROM dbo.Ventas v
+               WHERE v.IdTienda=? AND $filtroFecha AND ISNULL(v.Cancelada,0)=0""",
+            if (fecha != null) listOf<Any?>(fecha, idTienda, fecha) else listOf<Any?>(idTienda)
+        ) { rs ->
+            val total = rs.getDouble("TotalVentas")
+            val num = rs.getInt("NumTickets")
+            Triple(rs.getString("Fecha") ?: "", total to num, rs.getDouble("TotalDescuentos"))
+        } ?: Triple("", 0.0 to 0, 0.0)
+
+        // Por forma de pago (efectivo / tarjeta / transferencia / otros) desde PagosVenta
+        val porForma = db.query(
+            """SELECT fp.Nombre AS Etiqueta, COUNT(*) AS Cant, ISNULL(SUM(pv.Monto),0) AS Importe
+               FROM dbo.Ventas v
+               INNER JOIN dbo.PagosVenta pv ON pv.IdVenta = v.IdVenta
+               INNER JOIN dbo.FormasPago fp ON fp.IdFormaPago = pv.IdFormaPago
+               WHERE v.IdTienda=? AND $filtroFecha AND ISNULL(v.Cancelada,0)=0
+               GROUP BY fp.Nombre ORDER BY Importe DESC""",
+            params()
+        ) { rs -> ReporteFila(rs.getString("Etiqueta") ?: "", rs.getDouble("Cant"), rs.getDouble("Importe")) }
+
+        val efectivo = porForma.filter { it.etiqueta.contains("efectivo", true) }.sumOf { it.importe }
+        val tarjeta = porForma.filter {
+            it.etiqueta.contains("tarjeta", true) || it.etiqueta.contains("credito", true) || it.etiqueta.contains("debito", true)
+        }.sumOf { it.importe }
+        val otros = porForma.sumOf { it.importe } - efectivo - tarjeta
+
+        // Por mesero (Ventas → MaestroComandas → Meseros)
+        val porMesero = db.query(
+            """SELECT RTRIM(ISNULL(ms.Nombre,'') + ' ' + ISNULL(ms.Apellidos,'')) AS Etiqueta,
+                      COUNT(DISTINCT v.IdVenta) AS Cant, ISNULL(SUM(v.Total),0) AS Importe
+               FROM dbo.Ventas v
+               LEFT JOIN dbo.MaestroComandas mc ON mc.IdComanda = v.IdComanda
+               LEFT JOIN dbo.Meseros ms ON ms.IdMesero = mc.IdMesero
+               WHERE v.IdTienda=? AND $filtroFecha AND ISNULL(v.Cancelada,0)=0
+               GROUP BY RTRIM(ISNULL(ms.Nombre,'') + ' ' + ISNULL(ms.Apellidos,''))
+               ORDER BY Importe DESC""",
+            params()
+        ) { rs -> ReporteFila(rs.getString("Etiqueta")?.ifBlank { "(sin mesero)" } ?: "(sin mesero)", rs.getDouble("Cant"), rs.getDouble("Importe")) }
+
+        // Por categoría (DetalleVentas → Articulos → Categorias)
+        val porCategoria = db.query(
+            """SELECT ISNULL(c.Nombre, '(sin categoría)') AS Etiqueta,
+                      ISNULL(SUM(dv.Cantidad),0) AS Cant, ISNULL(SUM(dv.Total),0) AS Importe
+               FROM dbo.Ventas v
+               INNER JOIN dbo.DetalleVentas dv ON dv.IdVenta = v.IdVenta
+               INNER JOIN dbo.Articulos a ON a.IdArticulo = dv.IdArticulo
+               LEFT JOIN dbo.Categorias c ON c.IdCategoria = a.IdCategoria
+               WHERE v.IdTienda=? AND $filtroFecha AND ISNULL(v.Cancelada,0)=0
+               GROUP BY c.Nombre ORDER BY Importe DESC""",
+            params()
+        ) { rs -> ReporteFila(rs.getString("Etiqueta") ?: "", rs.getDouble("Cant"), rs.getDouble("Importe")) }
+
+        // Productos más vendidos (top 15)
+        val productos = db.query(
+            """SELECT TOP 15 ISNULL(dv.Descripcion, a.Nombre) AS Etiqueta,
+                      ISNULL(SUM(dv.Cantidad),0) AS Cant, ISNULL(SUM(dv.Total),0) AS Importe
+               FROM dbo.Ventas v
+               INNER JOIN dbo.DetalleVentas dv ON dv.IdVenta = v.IdVenta
+               INNER JOIN dbo.Articulos a ON a.IdArticulo = dv.IdArticulo
+               WHERE v.IdTienda=? AND $filtroFecha AND ISNULL(v.Cancelada,0)=0
+               GROUP BY ISNULL(dv.Descripcion, a.Nombre)
+               ORDER BY Cant DESC""",
+            params()
+        ) { rs -> ReporteFila(rs.getString("Etiqueta") ?: "", rs.getDouble("Cant"), rs.getDouble("Importe")) }
+
+        val total = resumen.second.first
+        val num = resumen.second.second
+        return ReportesDia(
+            resumen = ResumenDia(
+                fecha = resumen.first,
+                totalVentas = total,
+                numTickets = num,
+                ticketPromedio = if (num > 0) total / num else 0.0,
+                totalEfectivo = efectivo,
+                totalTarjeta = tarjeta,
+                totalOtros = otros.coerceAtLeast(0.0),
+                totalDescuentos = resumen.third
+            ),
+            porFormaPago = porForma,
+            porMesero = porMesero,
+            porCategoria = porCategoria,
+            productosTop = productos
+        )
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // CONFIGURACIÓN
     // ─────────────────────────────────────────────────────────────────────────
 
