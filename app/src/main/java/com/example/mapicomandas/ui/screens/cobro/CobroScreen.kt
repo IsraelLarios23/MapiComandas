@@ -170,6 +170,20 @@ fun CobroScreen(
                 var propinaInput by remember {
                     mutableStateOf(String.format("%.2f", uiState.propinaIngresada))
                 }
+                // Sugerencias 15/18/20% sobre el subtotal (total sin propina)
+                val baseProp = uiState.comanda?.total ?: 0.0
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 4.dp)) {
+                    listOf(0.0, 0.10, 0.15, 0.18, 0.20).forEach { pct ->
+                        val monto = baseProp * pct
+                        val etiqueta = if (pct == 0.0) "Sin" else "${(pct * 100).toInt()}%"
+                        val sel = kotlin.math.abs(uiState.propinaIngresada - monto) < 0.01
+                        FilterChip(
+                            selected = sel,
+                            onClick = { viewModel.setPropina(monto); propinaInput = String.format("%.2f", monto) },
+                            label = { Text(etiqueta, fontSize = 11.sp) }
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = propinaInput,
                     onValueChange = {

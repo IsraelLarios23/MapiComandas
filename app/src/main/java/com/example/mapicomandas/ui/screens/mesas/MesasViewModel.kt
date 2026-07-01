@@ -23,6 +23,7 @@ data class MesasUiState(
     val mesasLibres: List<Mesa> = emptyList(),
     val meseros: List<Mesero> = emptyList(),
     val mesaContextual: MesaUi? = null,
+    val platillosListos: Int = 0,
     val cargando: Boolean = false,
     val error: String? = null
 )
@@ -73,7 +74,8 @@ class MesasViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val mesas = repo.obtenerMesas(_uiState.value.zonaSeleccionada)
-                _uiState.value = _uiState.value.copy(mesas = mesas, error = null)
+                val listos = runCatching { repo.contarPlatillosListos() }.getOrDefault(0)
+                _uiState.value = _uiState.value.copy(mesas = mesas, platillosListos = listos, error = null)
             } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }

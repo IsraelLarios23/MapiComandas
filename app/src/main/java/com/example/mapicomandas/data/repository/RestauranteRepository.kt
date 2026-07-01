@@ -58,6 +58,8 @@ interface RestauranteRepository {
     suspend fun actualizarComensales(idComanda: Int, numPersonas: Int)
 
     // ── Cocina / KDS ──────────────────────────────────────────────────────────
+    /** Nº de platillos LISTOS para servir (Status=3) en toda la tienda. */
+    suspend fun contarPlatillosListos(): Int
     suspend fun enviarACocina(idComanda: Int)
     suspend fun marcarListo(idDetalle: Int)
     suspend fun marcarEntregado(idDetalle: Int)

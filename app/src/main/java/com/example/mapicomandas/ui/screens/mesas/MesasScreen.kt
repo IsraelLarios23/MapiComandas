@@ -56,7 +56,17 @@ fun MesasScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("MapiComandas — Plano de Mesas", fontWeight = FontWeight.Bold) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Plano de Mesas", fontWeight = FontWeight.Bold)
+                        if (uiState.platillosListos > 0) {
+                            Spacer(Modifier.width(10.dp))
+                            Badge(containerColor = Color(0xFF4CAF50)) {
+                                Text("${uiState.platillosListos} listos", color = Color.White)
+                            }
+                        }
+                    }
+                },
                 navigationIcon = {
                     if (onVolver != null) {
                         IconButton(onClick = onVolver) {

@@ -515,6 +515,15 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
     // COCINA / KDS
     // ─────────────────────────────────────────────────────────────────────────
 
+    override suspend fun contarPlatillosListos(): Int =
+        db.queryOne(
+            """SELECT COUNT(*) AS N
+               FROM dbo.DetalleComandas dc
+               INNER JOIN dbo.MaestroComandas mc ON mc.IdComanda=dc.IdComanda
+               WHERE dc.Status=3 AND mc.Status NOT IN (5,6) AND mc.IdTienda=?""",
+            listOf(session.idTienda)
+        ) { rs -> rs.getInt("N") } ?: 0
+
     override suspend fun enviarACocina(idComanda: Int) = db.inTransaction { conn ->
         conn.executeUpdate(
             "UPDATE dbo.DetalleComandas SET Status=2, FechaEnvio=GETDATE() WHERE IdComanda=? AND Status=1",
