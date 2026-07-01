@@ -309,10 +309,24 @@ class CobroViewModel @Inject constructor(
     }
 
     fun setModoDivision(modo: ModoDivision) {
-        _uiState.value = _uiState.value.copy(modoDivision = modo)
+        val partes = if (modo == ModoDivision.PARTES_IGUALES)
+            _uiState.value.partesDivision.coerceAtLeast(2) else 1
+        _uiState.value = _uiState.value.copy(modoDivision = modo, partesDivision = partes)
         if (modo == ModoDivision.POR_LUGAR) {
             organizarPorLugar()
         }
+    }
+
+    fun setPartesDivision(n: Int) {
+        _uiState.value = _uiState.value.copy(partesDivision = n.coerceIn(2, 20))
+    }
+
+    /** Total (con propina) dividido entre el nº de partes iguales. */
+    fun montoPorParte(): Double {
+        val s = _uiState.value
+        val total = (s.comanda?.total ?: 0.0) + s.propinaIngresada
+        val partes = s.partesDivision.coerceAtLeast(1)
+        return if (partes > 1) total / partes else total
     }
 
     private fun organizarPorLugar() {

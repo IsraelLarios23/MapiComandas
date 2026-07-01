@@ -210,6 +210,49 @@ fun CobroScreen(
                     if (uiState.cambio > 0) {
                         FilaTotal("Cambio", uiState.cambio, color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
                     }
+
+                    Spacer(Modifier.height(12.dp))
+                    Divider()
+                    // ── División de cuenta ──────────────────────────────────
+                    Text("Dividir cuenta", fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                        modifier = Modifier.padding(top = 8.dp))
+                    val dividir = uiState.partesDivision > 1
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FilterChip(
+                            selected = !dividir,
+                            onClick = { viewModel.setModoDivision(com.example.mapicomandas.ui.screens.cobro.ModoDivision.NINGUNO) },
+                            label = { Text("No dividir") }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        FilterChip(
+                            selected = dividir,
+                            onClick = { viewModel.setModoDivision(com.example.mapicomandas.ui.screens.cobro.ModoDivision.PARTES_IGUALES) },
+                            label = { Text("Partes iguales") }
+                        )
+                    }
+                    if (dividir) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            IconButton(onClick = { viewModel.setPartesDivision(uiState.partesDivision - 1) }) {
+                                Icon(Icons.Default.Remove, "Menos partes")
+                            }
+                            Text("${uiState.partesDivision} partes", fontWeight = FontWeight.Bold)
+                            IconButton(onClick = { viewModel.setPartesDivision(uiState.partesDivision + 1) }) {
+                                Icon(Icons.Default.Add, "Más partes")
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "$${String.format(java.util.Locale.US, "%,.2f", viewModel.montoPorParte())} c/u",
+                                color = Color(0xFF1A237E), fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            "Cobra cada parte con una forma de pago; el monto sugerido será una parte.",
+                            fontSize = 11.sp, color = Color.Gray
+                        )
+                    }
                 }
             }
 
@@ -299,9 +342,12 @@ fun CobroScreen(
 
                 // Diálogo para capturar el monto de la forma de pago seleccionada
                 formaSeleccionada?.let { forma ->
+                    // Con división activa, sugiere una parte (sin exceder lo que resta).
+                    val sugerido = if (uiState.partesDivision > 1)
+                        minOf(viewModel.montoPorParte(), importeRestante) else importeRestante
                     DialogoMontoPago(
                         forma = forma,
-                        montoSugerido = importeRestante,
+                        montoSugerido = sugerido,
                         montoMaximo = importeRestante,
                         onConfirmar = { monto ->
                             if (forma.usaTerminal) {
