@@ -267,12 +267,14 @@ class ComandaViewModel @Inject constructor(
     fun enviarACocina() {
         viewModelScope.launch {
             try {
+                // 1. Imprime las líneas PENDIENTES (Status=1) en sus puntos — determinístico,
+                //    antes de marcar, para no depender de una ventana de tiempo.
+                val resumen = runCatching {
+                    impresionCocina.imprimir(idComanda, soloRecienEnviadas = false, todasLasLineas = false)
+                }.getOrElse { listOf("Impresión: ${it.message}") }
+                // 2. Marca como enviadas a cocina (Status=2, FechaEnvio)
                 repo.enviarACocina(idComanda)
                 cargarComanda()
-                // Imprime en los puntos configurados solo lo recién enviado
-                val resumen = runCatching {
-                    impresionCocina.imprimir(idComanda, soloRecienEnviadas = true, todasLasLineas = false)
-                }.getOrElse { listOf("Impresión: ${it.message}") }
                 _uiState.value = _uiState.value.copy(exito = "Enviado a cocina · ${resumen.joinToString(" | ")}")
             } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)

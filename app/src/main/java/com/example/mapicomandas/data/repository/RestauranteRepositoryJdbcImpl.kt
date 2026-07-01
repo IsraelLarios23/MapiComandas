@@ -881,10 +881,20 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             )
         } ?: CabeceraCocina("", "", "", null)
 
-        // ── Líneas (con status/tiempo) ──
-        val whereTime = if (soloRecienEnviadas && !todasLasLineas)
-            "AND dc.FechaEnvio >= DATEADD(SECOND, -60, GETDATE())" else ""
-        val filtroStatus = if (todasLasLineas) "dc.Status <> 5" else "dc.Status IN (2,3)"
+        // ── Líneas según filtro ──
+        //   todasLasLineas      → toda la comanda activa (Status<>5)  [reimpresión/cuenta]
+        //   soloRecienEnviadas  → recién enviadas (30s, igual que MapiPOS) [reimpresión rápida]
+        //   ninguno (default)   → PENDIENTES (Status=1) [flujo enviar-a-cocina: imprime antes de marcar]
+        val filtroStatus: String
+        val whereTime: String
+        when {
+            todasLasLineas -> { filtroStatus = "dc.Status <> 5"; whereTime = "" }
+            soloRecienEnviadas -> {
+                filtroStatus = "dc.Status IN (2,3)"
+                whereTime = "AND dc.FechaEnvio >= DATEADD(SECOND, -30, GETDATE())"
+            }
+            else -> { filtroStatus = "dc.Status = 1"; whereTime = "" }
+        }
         data class LineaRaw(
             val idDetalle: Int, val cantidad: Double, val notas: String,
             val idArticulo: Int, val articulo: String, val idCategoria: Int, val puntoOverride: Int?
@@ -982,8 +992,9 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             }
         }
 
-        // ── Puntos activos + categorías ──
+        // ── Puntos activos + categorías (Map para lookup O(1)) ──
         val puntos = obtenerPuntosImpresion()   // ya trae categorias por punto y solo activos
+        val puntoPorId = puntos.associateBy { it.idPuntoImpresion }
         val catsPorPunto = puntos.associate { it.idPuntoImpresion to it.categorias.toSet() }
 
         // ── Agrupar líneas por punto ──
@@ -994,14 +1005,14 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
                 idPunto = catsPorPunto.entries.firstOrNull { it.value.contains(l.idCategoria) }?.key
             }
             if (idPunto == null) return@forEach
-            val p = puntos.firstOrNull { it.idPuntoImpresion == idPunto } ?: return@forEach
+            val p = puntoPorId[idPunto] ?: return@forEach
             if (!p.imprimirAlEnviar) return@forEach
             porPunto.getOrPut(idPunto) { mutableListOf() }
                 .add(LineaCocina(l.cantidad, l.articulo, l.kitRef, l.notas, l.mods))
         }
 
         val tickets = porPunto.mapNotNull { (idPunto, lns) ->
-            val p = puntos.firstOrNull { it.idPuntoImpresion == idPunto } ?: return@mapNotNull null
+            val p = puntoPorId[idPunto] ?: return@mapNotNull null
             PuntoImpresionTicket(idPunto, p.nombre, p.impresora, p.ancho, p.copias, lns)
         }
         return TicketsCocina(cabecera, tickets)

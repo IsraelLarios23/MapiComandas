@@ -34,7 +34,7 @@ object KitchenEscPos {
         // Encabezado centrado, doble alto/ancho
         raw(ESC, 'a'.code.toByte(), 1)              // center
         raw(GS, '!'.code.toByte(), 0x11)            // doble W+H
-        line(punto.nombre.uppercase(Locale.getDefault()))
+        line(punto.nombre.uppercase(Locale.US))
         raw(GS, '!'.code.toByte(), 0x00)            // normal
         line("=".repeat(w))
         raw(ESC, 'a'.code.toByte(), 0)              // left
@@ -49,7 +49,7 @@ object KitchenEscPos {
         punto.lineas.forEach { l ->
             raw(ESC, 'E'.code.toByte(), 1)          // bold on
             val cant = String.format(Locale.US, "%.2f", l.cantidad).trimEnd('0').trimEnd('.')
-            line(trunc("$cant  ${l.articulo}".uppercase(Locale.getDefault()), w))
+            line(trunc("$cant  ${l.articulo}".uppercase(Locale.US), w))
             raw(ESC, 'E'.code.toByte(), 0)          // bold off
 
             if (l.kitRef.isNotBlank()) line(trunc("   (Kit: ${l.kitRef})", w))
