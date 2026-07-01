@@ -3,6 +3,8 @@ package com.example.mapicomandas.ui.screens.ventas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -68,8 +70,10 @@ fun VentasScreen(
             items(uiState.ventas, key = { it.idVenta }) { venta ->
                 TarjetaVenta(
                     venta = venta,
+                    facturacionActiva = uiState.facturacionActiva,
                     onReimprimir = { viewModel.reimprimir(venta) },
-                    onCancelar = { viewModel.pedirCancelar(venta) }
+                    onCancelar = { viewModel.pedirCancelar(venta) },
+                    onFacturar = { viewModel.pedirFacturar(venta) }
                 )
             }
         }
@@ -83,10 +87,25 @@ fun VentasScreen(
             onCancelar = { viewModel.cerrarCancelar() }
         )
     }
+
+    uiState.ventaParaFacturar?.let { venta ->
+        DialogoFacturar(
+            venta = venta,
+            facturando = uiState.facturando,
+            onFacturar = { datos -> viewModel.facturar(venta, datos) },
+            onDismiss = { viewModel.cerrarFacturar() }
+        )
+    }
 }
 
 @Composable
-fun TarjetaVenta(venta: VentaDia, onReimprimir: () -> Unit, onCancelar: () -> Unit) {
+fun TarjetaVenta(
+    venta: VentaDia,
+    facturacionActiva: Boolean,
+    onReimprimir: () -> Unit,
+    onCancelar: () -> Unit,
+    onFacturar: () -> Unit
+) {
     Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -105,11 +124,101 @@ fun TarjetaVenta(venta: VentaDia, onReimprimir: () -> Unit, onCancelar: () -> Un
             Text("$${money(venta.total)}", fontWeight = FontWeight.Bold, fontSize = 16.sp,
                 modifier = Modifier.padding(end = 8.dp))
             IconButton(onClick = onReimprimir) { Icon(Icons.Default.Print, "Reimprimir", tint = Color(0xFF2196F3)) }
+            if (facturacionActiva && !venta.cancelada) {
+                IconButton(onClick = onFacturar) { Icon(Icons.Default.ReceiptLong, "Facturar", tint = Color(0xFF6A1B9A)) }
+            }
             if (!venta.cancelada) {
                 IconButton(onClick = onCancelar) { Icon(Icons.Default.Cancel, "Cancelar", tint = Color.Red) }
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DialogoFacturar(
+    venta: VentaDia,
+    facturando: Boolean,
+    onFacturar: (com.example.mapicomandas.data.facturacion.DatosFactura) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var rfc by remember { mutableStateOf("") }
+    var razon by remember { mutableStateOf("") }
+    var cp by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var uso by remember { mutableStateOf("G03") }
+    var regimen by remember { mutableStateOf("616") }
+    var expUso by remember { mutableStateOf(false) }
+    var expReg by remember { mutableStateOf(false) }
+    val cat = com.example.mapicomandas.data.facturacion.CatalogosCfdi
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Facturar T-${venta.folio}") },
+        text = {
+            androidx.compose.foundation.layout.Column(
+                Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())
+            ) {
+                OutlinedTextField(rfc, { rfc = it.uppercase() }, label = { Text("RFC receptor") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(razon, { razon = it }, label = { Text("Razón social") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                Row {
+                    OutlinedTextField(cp, { cp = it.filter { c -> c.isDigit() } }, label = { Text("C.P.") },
+                        singleLine = true, modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedTextField(email, { email = it }, label = { Text("Correo") },
+                        singleLine = true, modifier = Modifier.weight(2f))
+                }
+                Spacer(Modifier.height(8.dp))
+                // Uso CFDI
+                ExposedDropdownMenuBox(expanded = expUso, onExpandedChange = { expUso = it }) {
+                    OutlinedTextField(
+                        value = cat.usosCfdi.firstOrNull { it.first == uso }?.let { "${it.first} · ${it.second}" } ?: uso,
+                        onValueChange = {}, readOnly = true, label = { Text("Uso CFDI") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expUso) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = expUso, onDismissRequest = { expUso = false }) {
+                        cat.usosCfdi.forEach { (c, d) ->
+                            DropdownMenuItem(text = { Text("$c · $d") }, onClick = { uso = c; expUso = false })
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                // Régimen fiscal
+                ExposedDropdownMenuBox(expanded = expReg, onExpandedChange = { expReg = it }) {
+                    OutlinedTextField(
+                        value = cat.regimenes.firstOrNull { it.first == regimen }?.let { "${it.first} · ${it.second}" } ?: regimen,
+                        onValueChange = {}, readOnly = true, label = { Text("Régimen fiscal") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expReg) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = expReg, onDismissRequest = { expReg = false }) {
+                        cat.regimenes.forEach { (c, d) ->
+                            DropdownMenuItem(text = { Text("$c · $d") }, onClick = { regimen = c; expReg = false })
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !facturando && rfc.length in 12..13 && razon.isNotBlank(),
+                onClick = {
+                    onFacturar(
+                        com.example.mapicomandas.data.facturacion.DatosFactura(
+                            rfc = rfc.trim(), razonSocial = razon.trim(), usoCfdi = uso,
+                            regimenFiscal = regimen, codigoPostal = cp.trim(), email = email.trim()
+                        )
+                    )
+                }
+            ) { Text(if (facturando) "Timbrando…" else "Facturar") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
 }
 
 private fun money(v: Double) = String.format(Locale.US, "%,.2f", v)
