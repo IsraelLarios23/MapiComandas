@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -102,13 +103,42 @@ fun DomicilioScreen(
             items(uiState.comandas, key = { it.idComanda }) { comanda ->
                 TarjetaDomicilio(
                     comanda = comanda,
+                    openPayActivo = uiState.openPayActivo,
+                    generandoLink = uiState.generandoLink,
                     onAbrir = { onAbrirComanda(comanda.idComanda) },
                     onCambiarStatus = { nuevoStatus ->
                         viewModel.actualizarStatusEntrega(comanda.idComanda, nuevoStatus)
-                    }
+                    },
+                    onLinkPago = { viewModel.generarLinkPago(comanda) }
                 )
             }
         }
+    }
+
+    // Diálogo con el link de pago generado (compartir / copiar)
+    uiState.linkPago?.let { url ->
+        val context = androidx.compose.ui.platform.LocalContext.current
+        AlertDialog(
+            onDismissRequest = { viewModel.limpiarLinkPago() },
+            title = { Text("Link de pago OpenPay") },
+            text = {
+                Column {
+                    Text("Comparte esta liga con el cliente para que pague en línea:", fontSize = 13.sp)
+                    Spacer(Modifier.height(8.dp))
+                    SelectionContainer { Text(url, fontSize = 12.sp, color = Color(0xFF1565C0)) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_TEXT, url)
+                    }
+                    context.startActivity(android.content.Intent.createChooser(share, "Compartir link de pago"))
+                }) { Text("Compartir") }
+            },
+            dismissButton = { TextButton(onClick = { viewModel.limpiarLinkPago() }) { Text("Cerrar") } }
+        )
     }
 
     // Diálogo nuevo pedido
@@ -131,8 +161,11 @@ fun DomicilioScreen(
 @Composable
 fun TarjetaDomicilio(
     comanda: ComandaSinMesa,
+    openPayActivo: Boolean,
+    generandoLink: Boolean,
     onAbrir: () -> Unit,
-    onCambiarStatus: (Int) -> Unit
+    onCambiarStatus: (Int) -> Unit,
+    onLinkPago: () -> Unit
 ) {
     val (colorStatus, iconoStatus, labelStatus) = when (comanda.statusEntrega) {
         StatusEntrega.PENDIENTE -> Triple(Color(0xFFFF9800), Icons.Default.HourglassEmpty, "Pendiente")
@@ -209,6 +242,21 @@ fun TarjetaDomicilio(
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                         ) { Text("Entregado", fontSize = 11.sp) }
                     }
+                }
+            }
+
+            // Link de pago en línea (OpenPay) — para cobrar antes de entregar
+            if (openPayActivo) {
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(
+                    onClick = onLinkPago,
+                    enabled = !generandoLink,
+                    modifier = Modifier.height(32.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF6A1B9A))
+                ) {
+                    Icon(Icons.Default.Link, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (generandoLink) "Generando…" else "Link de pago", fontSize = 11.sp)
                 }
             }
         }

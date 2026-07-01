@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mapicomandas.SessionManager
 import com.example.mapicomandas.data.model.*
+import com.example.mapicomandas.data.openpay.OpenPayService
 import com.example.mapicomandas.data.repository.RestauranteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,12 +21,16 @@ data class DomicilioUiState(
     val exito: String? = null,
     val mostrarNuevoPedido: Boolean = false,
     val mostrarEditarRepartidores: Boolean = false,
-    val mostrarEditarZonas: Boolean = false
+    val mostrarEditarZonas: Boolean = false,
+    val openPayActivo: Boolean = false,
+    val generandoLink: Boolean = false,
+    val linkPago: String? = null            // URL a compartir cuando se genera
 )
 
 @HiltViewModel
 class DomicilioViewModel @Inject constructor(
     private val repo: RestauranteRepository,
+    private val openPay: OpenPayService,
     val session: SessionManager
 ) : ViewModel() {
 
@@ -34,7 +39,34 @@ class DomicilioViewModel @Inject constructor(
 
     init {
         cargarDatos()
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                openPayActivo = runCatching { openPay.estaConfigurado() }.getOrDefault(false)
+            )
+        }
     }
+
+    /** Genera un link de pago OpenPay para el pedido y lo expone para compartir. */
+    fun generarLinkPago(comanda: ComandaSinMesa) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(generandoLink = true)
+            val total = comanda.total + comanda.cargoEntrega
+            val res = openPay.crearLinkPago(
+                monto = total,
+                descripcion = "Pedido ${comanda.folio}",
+                ordenId = comanda.folio,
+                clienteNombre = comanda.nombreCliente ?: "Cliente",
+                clienteEmail = "",
+                clienteTelefono = comanda.telefonoCliente ?: ""
+            )
+            _uiState.value = if (res.ok)
+                _uiState.value.copy(generandoLink = false, linkPago = res.url, exito = "Link de pago generado")
+            else
+                _uiState.value.copy(generandoLink = false, error = res.mensaje)
+        }
+    }
+
+    fun limpiarLinkPago() { _uiState.value = _uiState.value.copy(linkPago = null) }
 
     fun cargarDatos() {
         viewModelScope.launch {
