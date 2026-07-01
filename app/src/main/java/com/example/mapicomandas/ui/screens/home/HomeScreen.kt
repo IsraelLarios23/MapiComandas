@@ -37,6 +37,7 @@ fun HomeScreen(
     onIrAPuntosImpresion: () -> Unit = {},
     onIrAReportes: () -> Unit = {},
     onIrAVentas: () -> Unit = {},
+    onIrAReservaciones: () -> Unit = {},
     onCerrarSesion: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -49,6 +50,7 @@ fun HomeScreen(
         FuncionHome("Caja", Icons.Default.PointOfSale, Color(0xFF37474F), onIrACaja),
         FuncionHome("Ventas del día", Icons.Default.ReceiptLong, Color(0xFF455A64), onIrAVentas),
         FuncionHome("Reportes", Icons.Default.BarChart, Color(0xFF00838F), onIrAReportes),
+        FuncionHome("Reservaciones", Icons.Default.EventAvailable, Color(0xFF6A1B9A), onIrAReservaciones),
         FuncionHome("Puntos de\nImpresión", Icons.Default.Print, Color(0xFF00695C), onIrAPuntosImpresion),
         FuncionHome("Configuración", Icons.Default.Settings, Color(0xFF6A1B9A), onIrASettings),
     )

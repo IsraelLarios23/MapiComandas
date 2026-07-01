@@ -463,3 +463,17 @@ data class ResumenCaja(
     val saldoFinal: Double,
     val numTransacciones: Int
 )
+
+// ── Reservaciones (agenda de mesas) ──────────────────────────────────────────
+/** Status: 1=Pendiente 2=Confirmada 3=Cumplida 4=NoShow 5=Cancelada */
+data class Reservacion(
+    val idReservacion: Int,
+    val idMesa: Int,
+    val mesa: String,
+    val nombreCliente: String,
+    val telefono: String,
+    val fechaHora: String,      // yyyy-MM-dd HH:mm
+    val personas: Int,
+    val observaciones: String,
+    val status: Int
+)

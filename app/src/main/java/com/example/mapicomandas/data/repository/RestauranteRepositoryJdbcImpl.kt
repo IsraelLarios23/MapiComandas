@@ -227,6 +227,90 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
     override suspend fun obtenerMeserosActivos(): List<Mesero> =
         db.query("SELECT * FROM dbo.Meseros WHERE Activo=1 ORDER BY Nombre") { rs -> rs.toMesero() }
 
+    // ── Reservaciones (agenda) ────────────────────────────────────────────────
+
+    /** Crea dbo.Reservaciones si no existe (mismo esquema que MapiPOS RestauranteMigration). */
+    private suspend fun asegurarTablaReservaciones() {
+        runCatching {
+            db.execute(
+                """IF OBJECT_ID('dbo.Reservaciones','U') IS NULL
+                   BEGIN
+                     CREATE TABLE dbo.Reservaciones (
+                       IdReservacion INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Reservaciones PRIMARY KEY,
+                       IdMesa        INT NOT NULL,
+                       NombreCliente NVARCHAR(150) NOT NULL,
+                       Telefono      NVARCHAR(30) NULL,
+                       FechaHora     DATETIME NOT NULL,
+                       Personas      INT NOT NULL CONSTRAINT DF_Reserv_Personas DEFAULT 1,
+                       Observaciones NVARCHAR(300) NULL,
+                       Status        TINYINT NOT NULL CONSTRAINT DF_Reserv_Status DEFAULT 1,
+                       FechaRegistro DATETIME NOT NULL CONSTRAINT DF_Reserv_FReg DEFAULT GETDATE(),
+                       IdUsuario     INT NULL
+                     );
+                     CREATE INDEX IX_Reserv_FechaHora ON dbo.Reservaciones(FechaHora, Status);
+                   END""",
+                emptyList()
+            )
+        }
+    }
+
+    override suspend fun obtenerReservaciones(fecha: String): List<Reservacion> {
+        asegurarTablaReservaciones()
+        return db.query(
+            """SELECT r.IdReservacion, r.IdMesa, m.Numero AS Mesa, r.NombreCliente,
+                      ISNULL(r.Telefono,'') AS Telefono, r.FechaHora, r.Personas,
+                      ISNULL(r.Observaciones,'') AS Observaciones, r.Status
+               FROM dbo.Reservaciones r
+               INNER JOIN dbo.Mesas m ON m.IdMesa = r.IdMesa
+               WHERE CAST(r.FechaHora AS DATE) = ?
+               ORDER BY r.FechaHora""",
+            listOf(fecha)
+        ) { rs ->
+            Reservacion(
+                idReservacion = rs.getInt("IdReservacion"),
+                idMesa = rs.getInt("IdMesa"),
+                mesa = rs.getString("Mesa") ?: "",
+                nombreCliente = rs.getString("NombreCliente") ?: "",
+                telefono = rs.getString("Telefono") ?: "",
+                fechaHora = (rs.getTimestamp("FechaHora")?.toString() ?: "").take(16),
+                personas = rs.getInt("Personas"),
+                observaciones = rs.getString("Observaciones") ?: "",
+                status = rs.getInt("Status")
+            )
+        }
+    }
+
+    override suspend fun guardarReservacion(
+        id: Int, idMesa: Int, nombre: String, telefono: String,
+        fechaHora: String, personas: Int, observaciones: String, idUsuario: Int
+    ): Int {
+        asegurarTablaReservaciones()
+        // fechaHora esperado: "yyyy-MM-dd HH:mm" → SQL DATETIME lo parsea directo.
+        return if (id > 0) {
+            db.execute(
+                """UPDATE dbo.Reservaciones
+                   SET IdMesa=?, NombreCliente=?, Telefono=?, FechaHora=?, Personas=?, Observaciones=?
+                   WHERE IdReservacion=?""",
+                listOf(idMesa, nombre, telefono, fechaHora, personas, observaciones, id)
+            )
+            id
+        } else {
+            db.executeAndGetId(
+                """INSERT INTO dbo.Reservaciones
+                   (IdMesa, NombreCliente, Telefono, FechaHora, Personas, Observaciones, Status, IdUsuario)
+                   VALUES (?,?,?,?,?,?,1,?)""",
+                listOf(idMesa, nombre, telefono, fechaHora, personas, observaciones, idUsuario)
+            )
+        }
+    }
+
+    override suspend fun cambiarStatusReservacion(idReservacion: Int, status: Int) {
+        db.execute(
+            "UPDATE dbo.Reservaciones SET Status=? WHERE IdReservacion=?",
+            listOf(status, idReservacion)
+        )
+    }
+
     override suspend fun obtenerMeseros(soloActivos: Boolean): List<Mesero> {
         val sql = if (soloActivos)
             "SELECT * FROM dbo.Meseros WHERE Activo=1 ORDER BY Nombre"

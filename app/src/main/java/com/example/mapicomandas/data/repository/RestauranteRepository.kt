@@ -89,6 +89,16 @@ interface RestauranteRepository {
     suspend fun obtenerZonasReparto(soloActivos: Boolean = true): List<ZonaReparto>
     suspend fun guardarZonaReparto(id: Int, nombre: String, cargo: Double, activo: Boolean): Int
 
+    // ── Reservaciones (agenda) ────────────────────────────────────────────────
+    /** Reservaciones de un día (yyyy-MM-dd). */
+    suspend fun obtenerReservaciones(fecha: String): List<Reservacion>
+    /** Crea (id=0) o actualiza una reservación. Devuelve el IdReservacion. */
+    suspend fun guardarReservacion(
+        id: Int, idMesa: Int, nombre: String, telefono: String,
+        fechaHora: String, personas: Int, observaciones: String, idUsuario: Int
+    ): Int
+    suspend fun cambiarStatusReservacion(idReservacion: Int, status: Int)
+
     // ── Catálogos ─────────────────────────────────────────────────────────────
     suspend fun obtenerArticulos(idCategoria: Int? = null, clave: String? = null, nombre: String? = null): List<Articulo>
     suspend fun obtenerCategorias(): List<Categoria>
