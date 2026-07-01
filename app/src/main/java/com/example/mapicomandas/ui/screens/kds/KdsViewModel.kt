@@ -19,6 +19,8 @@ data class KdsUiState(
     val grupos: List<GrupoKds> = emptyList(),
     val puntos: List<PuntoImpresion> = emptyList(),
     val puntoSeleccionado: Int? = null,
+    val oscuro: Boolean = true,
+    val fontScale: Float = 1.0f,
     val cargando: Boolean = false,
     val error: String? = null
 )
@@ -85,6 +87,20 @@ class KdsViewModel @Inject constructor(
     fun seleccionarPunto(idPunto: Int?) {
         _uiState.value = _uiState.value.copy(puntoSeleccionado = idPunto)
         cargarPlatillos()
+    }
+
+    fun alternarTema() {
+        _uiState.value = _uiState.value.copy(oscuro = !_uiState.value.oscuro)
+    }
+
+    fun aumentarFuente() {
+        val nueva = (_uiState.value.fontScale + 0.1f).coerceAtMost(1.8f)
+        _uiState.value = _uiState.value.copy(fontScale = nueva)
+    }
+
+    fun reducirFuente() {
+        val nueva = (_uiState.value.fontScale - 0.1f).coerceAtLeast(0.8f)
+        _uiState.value = _uiState.value.copy(fontScale = nueva)
     }
 
     fun marcarListo(idDetalle: Int) {

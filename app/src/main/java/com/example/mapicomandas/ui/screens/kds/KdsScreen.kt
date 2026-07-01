@@ -16,10 +16,37 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.mapicomandas.data.model.GrupoKds
 import com.example.mapicomandas.data.model.PlatilloKds
 import com.example.mapicomandas.data.model.StatusLinea
+
+/** Paleta de colores del KDS según el tema (oscuro/claro). */
+data class KdsPalette(
+    val fondo: Color,
+    val tarjeta: Color,
+    val texto: Color,
+    val textoSecundario: Color,
+    val divisor: Color
+) {
+    companion object {
+        val Oscuro = KdsPalette(
+            fondo = Color(0xFF0D0D0D),
+            tarjeta = Color(0xFF1E1E1E),
+            texto = Color.White,
+            textoSecundario = Color(0xFFBDBDBD),
+            divisor = Color(0xFF333333)
+        )
+        val Claro = KdsPalette(
+            fondo = Color(0xFFECEFF1),
+            tarjeta = Color(0xFFFFFFFF),
+            texto = Color(0xFF212121),
+            textoSecundario = Color(0xFF616161),
+            divisor = Color(0xFFCFD8DC)
+        )
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,6 +56,8 @@ fun KdsScreen(
     viewModel: KdsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val palette = if (uiState.oscuro) KdsPalette.Oscuro else KdsPalette.Claro
+    val fs = uiState.fontScale
 
     Scaffold(
         topBar = {
@@ -42,6 +71,21 @@ fun KdsScreen(
                 actions = {
                     IconButton(onClick = onIrHome) {
                         Icon(Icons.Default.Home, "Inicio")
+                    }
+                    // Ajuste de fuente
+                    IconButton(onClick = { viewModel.reducirFuente() }) {
+                        Icon(Icons.Default.Remove, "Reducir fuente")
+                    }
+                    Text("${(fs * 100).toInt()}%", color = Color.White, fontSize = 12.sp)
+                    IconButton(onClick = { viewModel.aumentarFuente() }) {
+                        Icon(Icons.Default.Add, "Aumentar fuente")
+                    }
+                    // Tema claro/oscuro
+                    IconButton(onClick = { viewModel.alternarTema() }) {
+                        Icon(
+                            if (uiState.oscuro) Icons.Default.LightMode else Icons.Default.DarkMode,
+                            "Cambiar tema"
+                        )
                     }
                     // Selector de punto de impresión
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -74,7 +118,8 @@ fun KdsScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    .padding(padding)
+                    .background(palette.fondo),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -88,13 +133,15 @@ fun KdsScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .background(Color(0xFF0D0D0D))
+                    .background(palette.fondo)
                     .padding(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(uiState.grupos, key = { it.idComanda }) { grupo ->
                     TarjetaKds(
                         grupo = grupo,
+                        palette = palette,
+                        fs = fs,
                         onMarcarListo = { idDetalle -> viewModel.marcarListo(idDetalle) },
                         onMarcarEntregado = { idDetalle -> viewModel.marcarEntregado(idDetalle) }
                     )
@@ -104,18 +151,18 @@ fun KdsScreen(
     }
 }
 
+/** Multiplica un tamaño base por la escala de fuente del KDS. */
+private fun TextUnit.scale(fs: Float): TextUnit = (this.value * fs).sp
+
 @Composable
 fun TarjetaKds(
     grupo: GrupoKds,
+    palette: KdsPalette,
+    fs: Float,
     onMarcarListo: (Int) -> Unit,
     onMarcarEntregado: (Int) -> Unit
 ) {
     val minutos = grupo.maxMinutosTranscurridos
-    val colorBorde = when {
-        minutos >= 20 -> Color(0xFFF44336)
-        minutos >= 10 -> Color(0xFFFF9800)
-        else -> Color(0xFF4CAF50)
-    }
     val colorEncabezado = when {
         minutos >= 20 -> Color(0xFFB71C1C)
         minutos >= 10 -> Color(0xFFE65100)
@@ -125,7 +172,7 @@ fun TarjetaKds(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        colors = CardDefaults.cardColors(containerColor = palette.tarjeta),
         border = CardDefaults.outlinedCardBorder().copy(
             width = 2.dp,
         )
@@ -145,12 +192,12 @@ fun TarjetaKds(
                         text = grupo.mesa,
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
+                        fontSize = 18.sp.scale(fs)
                     )
                     Text(
                         text = "Folio: ${grupo.folio}",
                         color = Color.White.copy(alpha = 0.8f),
-                        fontSize = 12.sp
+                        fontSize = 12.sp.scale(fs)
                     )
                 }
                 Column(horizontalAlignment = Alignment.End) {
@@ -158,14 +205,14 @@ fun TarjetaKds(
                         text = "${minutos}m",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 22.sp
+                        fontSize = 22.sp.scale(fs)
                     )
                     if (minutos >= 20) {
                         Text(
                             text = "¡DEMORA!",
                             color = Color(0xFFFF6B6B),
                             fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
+                            fontSize = 12.sp.scale(fs)
                         )
                     }
                 }
@@ -176,6 +223,8 @@ fun TarjetaKds(
                 grupo.platillos.forEach { platillo ->
                     FilaPlatilloKds(
                         platillo = platillo,
+                        palette = palette,
+                        fs = fs,
                         onMarcarListo = onMarcarListo,
                         onMarcarEntregado = onMarcarEntregado
                     )
@@ -188,6 +237,8 @@ fun TarjetaKds(
 @Composable
 fun FilaPlatilloKds(
     platillo: PlatilloKds,
+    palette: KdsPalette,
+    fs: Float,
     onMarcarListo: (Int) -> Unit,
     onMarcarEntregado: (Int) -> Unit
 ) {
@@ -200,31 +251,31 @@ fun FilaPlatilloKds(
         // Cantidad
         Text(
             text = "${platillo.cantidad.toInt()}×",
-            color = Color.White,
+            color = palette.texto,
             fontWeight = FontWeight.Bold,
-            fontSize = 20.sp,
-            modifier = Modifier.width(40.dp)
+            fontSize = 20.sp.scale(fs),
+            modifier = Modifier.width((40 * fs).dp)
         )
         // Nombre y notas
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = platillo.articulo,
-                color = Color.White,
+                color = palette.texto,
                 fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
+                fontSize = 16.sp.scale(fs)
             )
             if (platillo.kitRef.isNotBlank()) {
                 Text(
                     text = "(Kit: ${platillo.kitRef})",
-                    color = Color(0xFFBDBDBD),
-                    fontSize = 12.sp
+                    color = palette.textoSecundario,
+                    fontSize = 12.sp.scale(fs)
                 )
             }
             if (platillo.notas.isNotBlank()) {
                 Text(
                     text = "→ ${platillo.notas}",
-                    color = Color(0xFFFFCC02),
-                    fontSize = 12.sp
+                    color = Color(0xFFFFAA00),
+                    fontSize = 12.sp.scale(fs)
                 )
             }
         }
@@ -236,7 +287,7 @@ fun FilaPlatilloKds(
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
                     modifier = Modifier.height(36.dp)
                 ) {
-                    Text("Listo", fontSize = 12.sp)
+                    Text("Listo", fontSize = 12.sp.scale(fs))
                 }
             }
             StatusLinea.LISTO -> {
@@ -245,7 +296,7 @@ fun FilaPlatilloKds(
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3)),
                     modifier = Modifier.height(36.dp)
                 ) {
-                    Text("Entregar", fontSize = 12.sp)
+                    Text("Entregar", fontSize = 12.sp.scale(fs))
                 }
             }
             StatusLinea.ENTREGADO -> {
@@ -253,5 +304,5 @@ fun FilaPlatilloKds(
             }
         }
     }
-    Divider(color = Color(0xFF333333), thickness = 0.5.dp)
+    Divider(color = palette.divisor, thickness = 0.5.dp)
 }
