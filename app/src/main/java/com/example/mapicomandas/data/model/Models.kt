@@ -270,6 +270,41 @@ data class PuntoImpresion(
     val categorias: List<Int> = emptyList()
 )
 
+// ─── Ticket de cocina (ruteo por punto de impresión) ───────────────────────────
+
+data class CabeceraCocina(
+    val folio: String,
+    val mesa: String,
+    val mesero: String,
+    val numPersonas: Int?
+)
+
+data class ModCocina(val tipo: Int, val nombre: String, val precioExtra: Double)
+
+data class LineaCocina(
+    val cantidad: Double,
+    val articulo: String,
+    val kitRef: String = "",
+    val notas: String = "",
+    val modificadores: List<ModCocina> = emptyList()
+)
+
+/** Un punto de impresión con las líneas que le corresponden (ya ruteadas). */
+data class PuntoImpresionTicket(
+    val idPunto: Int,
+    val nombre: String,
+    val impresora: String,
+    val ancho: Int,
+    val copias: Int,
+    val lineas: List<LineaCocina>
+)
+
+/** Resultado del ruteo: cabecera + tickets por punto. */
+data class TicketsCocina(
+    val cabecera: CabeceraCocina,
+    val puntos: List<PuntoImpresionTicket>
+)
+
 // ─── Domicilio ────────────────────────────────────────────────────────────────
 
 data class Repartidor(

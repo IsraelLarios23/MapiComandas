@@ -85,9 +85,16 @@ interface RestauranteRepository {
     suspend fun obtenerPuntosImpresion(): List<PuntoImpresion>
     suspend fun obtenerMeseros(soloActivos: Boolean = true): List<Mesero>
 
+    // ── Puntos de impresión (config) ──────────────────────────────────────────
+    suspend fun guardarPuntoImpresion(punto: PuntoImpresion): Int
+    suspend fun eliminarPuntoImpresion(idPunto: Int)
+    suspend fun asignarCategoriasPunto(idPunto: Int, categorias: List<Int>)
+
     // ── Impresión ─────────────────────────────────────────────────────────────
     suspend fun imprimirComanda(idComanda: Int, soloRecienEnviadas: Boolean, todasLasLineas: Boolean): List<String>
     suspend fun imprimirSubCuenta(idComanda: Int, etiqueta: String, total: Double, idsDetalle: List<Int>)
+    /** Rutea las líneas a los puntos de impresión (por categoría, con expansión de kits). */
+    suspend fun construirTicketsCocina(idComanda: Int, soloRecienEnviadas: Boolean, todasLasLineas: Boolean): TicketsCocina
 
     // ── Caja ──────────────────────────────────────────────────────────────────
     suspend fun habilitarCaja(idCaja: Int, idUsuario: Int)

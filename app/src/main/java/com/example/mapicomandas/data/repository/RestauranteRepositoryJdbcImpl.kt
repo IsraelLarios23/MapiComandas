@@ -822,6 +822,191 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
         return puntos.map { p -> p.copy(categorias = catsPorPunto[p.idPuntoImpresion] ?: emptyList()) }
     }
 
+    override suspend fun guardarPuntoImpresion(punto: PuntoImpresion): Int {
+        val id = if (punto.idPuntoImpresion > 0) {
+            db.execute(
+                """UPDATE dbo.PuntosImpresion
+                   SET Nombre=?, Impresora=?, Ancho=?, Copias=?, ImprimirAlEnviar=?, Activo=?
+                   WHERE IdPuntoImpresion=?""",
+                listOf(punto.nombre, punto.impresora, punto.ancho, punto.copias,
+                       punto.imprimirAlEnviar, punto.activo, punto.idPuntoImpresion)
+            )
+            punto.idPuntoImpresion
+        } else {
+            db.executeAndGetId(
+                """INSERT INTO dbo.PuntosImpresion (Nombre,Impresora,Ancho,Copias,ImprimirAlEnviar,Activo)
+                   VALUES (?,?,?,?,?,?)""",
+                listOf(punto.nombre, punto.impresora, punto.ancho, punto.copias,
+                       punto.imprimirAlEnviar, punto.activo)
+            )
+        }
+        return id
+    }
+
+    override suspend fun eliminarPuntoImpresion(idPunto: Int) {
+        // Baja lógica (igual que MapiPOS): Activo=0
+        db.execute("UPDATE dbo.PuntosImpresion SET Activo=0 WHERE IdPuntoImpresion=?", listOf(idPunto))
+    }
+
+    override suspend fun asignarCategoriasPunto(idPunto: Int, categorias: List<Int>) = db.inTransaction { conn ->
+        conn.executeUpdate("DELETE FROM dbo.PuntosImpresionCategorias WHERE IdPuntoImpresion=?", listOf(idPunto))
+        categorias.distinct().forEach { idCat ->
+            conn.executeUpdate(
+                "INSERT INTO dbo.PuntosImpresionCategorias (IdPuntoImpresion, IdCategoria) VALUES (?,?)",
+                listOf(idPunto, idCat)
+            )
+        }
+    }
+
+    override suspend fun construirTicketsCocina(
+        idComanda: Int, soloRecienEnviadas: Boolean, todasLasLineas: Boolean
+    ): TicketsCocina {
+        // ── Cabecera ──
+        val cabecera = db.queryOne(
+            """SELECT mc.Folio,
+                      CASE WHEN mc.IdMesa IS NULL THEN N'Sin mesa' ELSE m.Numero END AS Mesa,
+                      RTRIM(ISNULL(ms.Nombre,'') + ' ' + ISNULL(ms.Apellidos,'')) AS Mesero,
+                      mc.NumPersonas
+               FROM dbo.MaestroComandas mc
+               LEFT JOIN dbo.Mesas m ON m.IdMesa = mc.IdMesa
+               LEFT JOIN dbo.Meseros ms ON ms.IdMesero = mc.IdMesero
+               WHERE mc.IdComanda=?""",
+            listOf(idComanda)
+        ) { rs ->
+            CabeceraCocina(
+                folio = rs.getString("Folio") ?: "",
+                mesa = rs.getString("Mesa") ?: "",
+                mesero = rs.getString("Mesero") ?: "",
+                numPersonas = rs.getObject("NumPersonas") as? Int
+            )
+        } ?: CabeceraCocina("", "", "", null)
+
+        // ── Líneas (con status/tiempo) ──
+        val whereTime = if (soloRecienEnviadas && !todasLasLineas)
+            "AND dc.FechaEnvio >= DATEADD(SECOND, -60, GETDATE())" else ""
+        val filtroStatus = if (todasLasLineas) "dc.Status <> 5" else "dc.Status IN (2,3)"
+        data class LineaRaw(
+            val idDetalle: Int, val cantidad: Double, val notas: String,
+            val idArticulo: Int, val articulo: String, val idCategoria: Int, val puntoOverride: Int?
+        )
+        val lineas = db.query(
+            """SELECT dc.IdDetalleComanda, dc.Linea, dc.Cantidad, ISNULL(dc.Notas,'') AS Notas,
+                      a.IdArticulo, a.Nombre AS Articulo, ISNULL(a.IdCategoria,0) AS IdCategoria,
+                      a.IdPuntoImpresion AS PuntoOverride
+               FROM dbo.DetalleComandas dc
+               INNER JOIN dbo.Articulos a ON a.IdArticulo = dc.IdArticulo
+               WHERE dc.IdComanda=? AND $filtroStatus $whereTime
+               ORDER BY dc.Linea""",
+            listOf(idComanda)
+        ) { rs ->
+            LineaRaw(
+                idDetalle = rs.getInt("IdDetalleComanda"),
+                cantidad = rs.getDouble("Cantidad"),
+                notas = rs.getString("Notas") ?: "",
+                idArticulo = rs.getInt("IdArticulo"),
+                articulo = rs.getString("Articulo") ?: "",
+                idCategoria = rs.getInt("IdCategoria"),
+                puntoOverride = rs.getObject("PuntoOverride") as? Int
+            )
+        }
+        if (lineas.isEmpty()) return TicketsCocina(cabecera, emptyList())
+
+        // Modificadores por detalle
+        val modsPorDetalle = db.query(
+            """SELECT dcm.IdDetalleComanda, dcm.Tipo, dcm.NombreSnapshot, dcm.PrecioExtra
+               FROM dbo.DetalleComandaModificadores dcm
+               WHERE dcm.IdDetalleComanda IN (
+                 SELECT IdDetalleComanda FROM dbo.DetalleComandas WHERE IdComanda=?)""",
+            listOf(idComanda)
+        ) { rs ->
+            Pair(
+                rs.getInt("IdDetalleComanda"),
+                ModCocina(rs.getInt("Tipo"), rs.getString("NombreSnapshot") ?: "", rs.getDouble("PrecioExtra"))
+            )
+        }.groupBy({ it.first }, { it.second })
+
+        // Componentes de kit por detalle (con su categoría y punto propios)
+        data class CompKit(
+            val etiqueta: String, val nombre: String, val cantidad: Double,
+            val idCategoria: Int, val idPunto: Int?
+        )
+        val kitsPorDetalle = db.query(
+            """SELECT ki.IdDetalleComanda, ki.EtiquetaSlot, ki.NombreSnapshot, ISNULL(ki.Cantidad,1) AS Cantidad,
+                      ISNULL(ca.IdCategoria,0) AS IdCategoria, ca.IdPuntoImpresion
+               FROM dbo.DetalleComandaKitItems ki
+               INNER JOIN dbo.Articulos ca ON ca.IdArticulo = ki.IdArticulo
+               WHERE ki.IdDetalleComanda IN (
+                 SELECT IdDetalleComanda FROM dbo.DetalleComandas WHERE IdComanda=?)
+               ORDER BY ki.IdDetalleComandaKitItem""",
+            listOf(idComanda)
+        ) { rs ->
+            Pair(
+                rs.getInt("IdDetalleComanda"),
+                CompKit(
+                    etiqueta = rs.getString("EtiquetaSlot") ?: "",
+                    nombre = rs.getString("NombreSnapshot") ?: "",
+                    cantidad = rs.getDouble("Cantidad"),
+                    idCategoria = rs.getInt("IdCategoria"),
+                    idPunto = rs.getObject("IdPuntoImpresion") as? Int
+                )
+            )
+        }.groupBy({ it.first }, { it.second })
+
+        // ── Expandir kits: cada componente al punto de SU categoría ──
+        data class LineaRuteo(
+            val cantidad: Double, val articulo: String, val idCategoria: Int,
+            val puntoOverride: Int?, val kitRef: String, val notas: String, val mods: List<ModCocina>
+        )
+        val expandidas = mutableListOf<LineaRuteo>()
+        lineas.forEach { l ->
+            val comps = kitsPorDetalle[l.idDetalle]
+            val mods = modsPorDetalle[l.idDetalle] ?: emptyList()
+            if (comps.isNullOrEmpty()) {
+                expandidas.add(LineaRuteo(l.cantidad, l.articulo, l.idCategoria, l.puntoOverride, "", l.notas, mods))
+            } else {
+                var primero = true
+                comps.forEach { c ->
+                    expandidas.add(
+                        LineaRuteo(
+                            cantidad = l.cantidad * c.cantidad,
+                            articulo = if (c.etiqueta.isBlank()) c.nombre else "${c.etiqueta}: ${c.nombre}",
+                            idCategoria = c.idCategoria,
+                            puntoOverride = c.idPunto,
+                            kitRef = l.articulo,
+                            notas = l.notas,
+                            mods = if (primero) mods else emptyList()
+                        )
+                    )
+                    primero = false
+                }
+            }
+        }
+
+        // ── Puntos activos + categorías ──
+        val puntos = obtenerPuntosImpresion()   // ya trae categorias por punto y solo activos
+        val catsPorPunto = puntos.associate { it.idPuntoImpresion to it.categorias.toSet() }
+
+        // ── Agrupar líneas por punto ──
+        val porPunto = linkedMapOf<Int, MutableList<LineaCocina>>()
+        expandidas.forEach { l ->
+            var idPunto = l.puntoOverride
+            if (idPunto == null) {
+                idPunto = catsPorPunto.entries.firstOrNull { it.value.contains(l.idCategoria) }?.key
+            }
+            if (idPunto == null) return@forEach
+            val p = puntos.firstOrNull { it.idPuntoImpresion == idPunto } ?: return@forEach
+            if (!p.imprimirAlEnviar) return@forEach
+            porPunto.getOrPut(idPunto) { mutableListOf() }
+                .add(LineaCocina(l.cantidad, l.articulo, l.kitRef, l.notas, l.mods))
+        }
+
+        val tickets = porPunto.mapNotNull { (idPunto, lns) ->
+            val p = puntos.firstOrNull { it.idPuntoImpresion == idPunto } ?: return@mapNotNull null
+            PuntoImpresionTicket(idPunto, p.nombre, p.impresora, p.ancho, p.copias, lns)
+        }
+        return TicketsCocina(cabecera, tickets)
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // IMPRESIÓN
     // ─────────────────────────────────────────────────────────────────────────

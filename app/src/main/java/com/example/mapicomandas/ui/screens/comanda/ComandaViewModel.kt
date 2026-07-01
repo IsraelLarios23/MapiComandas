@@ -36,6 +36,7 @@ data class ComandaUiState(
 class ComandaViewModel @Inject constructor(
     private val repo: RestauranteRepository,
     val session: SessionManager,
+    private val impresionCocina: com.example.mapicomandas.data.ImpresionCocinaService,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -268,7 +269,11 @@ class ComandaViewModel @Inject constructor(
             try {
                 repo.enviarACocina(idComanda)
                 cargarComanda()
-                _uiState.value = _uiState.value.copy(exito = "Enviado a cocina")
+                // Imprime en los puntos configurados solo lo recién enviado
+                val resumen = runCatching {
+                    impresionCocina.imprimir(idComanda, soloRecienEnviadas = true, todasLasLineas = false)
+                }.getOrElse { listOf("Impresión: ${it.message}") }
+                _uiState.value = _uiState.value.copy(exito = "Enviado a cocina · ${resumen.joinToString(" | ")}")
             } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
@@ -278,8 +283,9 @@ class ComandaViewModel @Inject constructor(
     fun imprimirComanda() {
         viewModelScope.launch {
             try {
-                repo.imprimirComanda(idComanda, soloRecienEnviadas = false, todasLasLineas = true)
-                _uiState.value = _uiState.value.copy(exito = "Impresión enviada")
+                // Imprime TODA la comanda en los puntos (cuenta / reimpresión)
+                val resumen = impresionCocina.imprimir(idComanda, soloRecienEnviadas = false, todasLasLineas = true)
+                _uiState.value = _uiState.value.copy(exito = resumen.joinToString(" | "))
             } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }

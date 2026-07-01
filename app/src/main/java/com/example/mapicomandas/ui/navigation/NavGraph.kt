@@ -30,6 +30,7 @@ object Routes {
     const val KDS = "kds"
     const val DOMICILIO = "domicilio"
     const val CAJA = "caja"
+    const val PUNTOS_IMPRESION = "puntos_impresion"
 
     fun comanda(idComanda: Int) = "comanda/$idComanda"
     fun cobro(idComanda: Int) = "cobro/$idComanda"
@@ -82,6 +83,7 @@ fun MapiNavGraph(sessionManager: SessionManager) {
                 onIrADomicilio = { navController.navigate(Routes.DOMICILIO) },
                 onIrACaja = { navController.navigate(Routes.CAJA) },
                 onIrASettings = { navController.navigate(Routes.SETTINGS) },
+                onIrAPuntosImpresion = { navController.navigate(Routes.PUNTOS_IMPRESION) },
                 onCerrarSesion = {
                     sessionManager.cerrarSesion()
                     navController.navigate(Routes.LOGIN) {
@@ -151,6 +153,13 @@ fun MapiNavGraph(sessionManager: SessionManager) {
             DomicilioScreen(
                 onVolver = { navController.popBackStack() },
                 onAbrirComanda = { idComanda -> navController.navigate(Routes.comanda(idComanda)) },
+                onIrHome = { irHome() }
+            )
+        }
+
+        composable(Routes.PUNTOS_IMPRESION) {
+            com.example.mapicomandas.ui.screens.puntos.PuntosImpresionScreen(
+                onVolver = { navController.popBackStack() },
                 onIrHome = { irHome() }
             )
         }

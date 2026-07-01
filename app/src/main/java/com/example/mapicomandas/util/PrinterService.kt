@@ -38,8 +38,11 @@ class PrinterService @Inject constructor(
     private val accionPermisoUsb = "com.example.mapicomandas.USB_PERMISSION"
 
     /** Imprime las líneas. Devuelve null si OK, o el mensaje de error. */
-    suspend fun imprimir(destino: String, lineas: List<String>, abrirCajon: Boolean = true): String? {
-        val payload = EscPosPayload.construir(lineas, abrirCajon)
+    suspend fun imprimir(destino: String, lineas: List<String>, abrirCajon: Boolean = true): String? =
+        enviarBytes(destino, EscPosPayload.construir(lineas, abrirCajon))
+
+    /** Envía un payload ESC/POS crudo al destino (net/bt/usb). Devuelve null si OK. */
+    suspend fun enviarBytes(destino: String, payload: ByteArray): String? {
         val t = destino.trim()
         return when {
             t.startsWith("bt:", ignoreCase = true) -> imprimirBluetooth(t.substring(3), payload)
