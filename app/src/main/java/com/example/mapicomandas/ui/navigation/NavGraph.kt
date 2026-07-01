@@ -43,6 +43,12 @@ fun MapiNavGraph(sessionManager: SessionManager) {
     // Arranque: si no hay conexión configurada → Config; si no → Login
     val startDest = if (sesion.dbConfig.host.isBlank()) Routes.CONFIG else Routes.LOGIN
 
+    fun irHome() {
+        navController.navigate(Routes.HOME) {
+            popUpTo(Routes.HOME) { inclusive = true }
+        }
+    }
+
     NavHost(navController = navController, startDestination = startDest) {
 
         // ── Configuración inicial de conexión ──────────────────────────────────
@@ -100,7 +106,8 @@ fun MapiNavGraph(sessionManager: SessionManager) {
                 onIrAKds = { navController.navigate(Routes.KDS) },
                 onIrACaja = { navController.navigate(Routes.CAJA) },
                 onIrADomicilio = { navController.navigate(Routes.DOMICILIO) },
-                onVolver = { navController.popBackStack() }
+                onVolver = { navController.popBackStack() },
+                onIrHome = { irHome() }
             )
         }
 
@@ -110,7 +117,8 @@ fun MapiNavGraph(sessionManager: SessionManager) {
         ) {
             ComandaScreen(
                 onVolver = { navController.popBackStack() },
-                onCobrar = { idComanda -> navController.navigate(Routes.cobro(idComanda)) }
+                onCobrar = { idComanda -> navController.navigate(Routes.cobro(idComanda)) },
+                onIrHome = { irHome() }
             )
         }
 
@@ -136,23 +144,19 @@ fun MapiNavGraph(sessionManager: SessionManager) {
         }
 
         composable(Routes.KDS) {
-            KdsScreen(onVolver = { navController.popBackStack() })
+            KdsScreen(onVolver = { navController.popBackStack() }, onIrHome = { irHome() })
         }
 
         composable(Routes.DOMICILIO) {
             DomicilioScreen(
                 onVolver = { navController.popBackStack() },
                 onAbrirComanda = { idComanda -> navController.navigate(Routes.comanda(idComanda)) },
-                onIrHome = {
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.HOME) { inclusive = true }
-                    }
-                }
+                onIrHome = { irHome() }
             )
         }
 
         composable(Routes.CAJA) {
-            CajaScreen(onVolver = { navController.popBackStack() })
+            CajaScreen(onVolver = { navController.popBackStack() }, onIrHome = { irHome() })
         }
     }
 }

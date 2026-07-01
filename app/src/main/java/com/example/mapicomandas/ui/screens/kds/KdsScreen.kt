@@ -25,6 +25,7 @@ import com.example.mapicomandas.data.model.StatusLinea
 @Composable
 fun KdsScreen(
     onVolver: () -> Unit,
+    onIrHome: () -> Unit = {},
     viewModel: KdsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -39,6 +40,9 @@ fun KdsScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onIrHome) {
+                        Icon(Icons.Default.Home, "Inicio")
+                    }
                     // Selector de punto de impresión
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         item {

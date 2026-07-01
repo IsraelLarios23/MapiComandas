@@ -37,6 +37,7 @@ fun MesasScreen(
     onIrACaja: () -> Unit,
     onIrADomicilio: () -> Unit,
     onVolver: (() -> Unit)? = null,
+    onIrHome: () -> Unit = {},
     viewModel: MesasViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -64,6 +65,9 @@ fun MesasScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onIrHome) {
+                        Icon(Icons.Default.Home, "Inicio")
+                    }
                     IconButton(onClick = { viewModel.refrescarMesas() }) {
                         Icon(Icons.Default.Refresh, "Refrescar")
                     }

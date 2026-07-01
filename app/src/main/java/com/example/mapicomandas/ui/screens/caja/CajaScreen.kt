@@ -18,6 +18,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 @Composable
 fun CajaScreen(
     onVolver: () -> Unit,
+    onIrHome: () -> Unit = {},
     viewModel: CajaViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -45,10 +46,14 @@ fun CajaScreen(
                 navigationIcon = {
                     IconButton(onClick = onVolver) { Icon(Icons.Default.ArrowBack, "Volver") }
                 },
+                actions = {
+                    IconButton(onClick = onIrHome) { Icon(Icons.Default.Home, "Inicio") }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color(0xFF37474F),
                     titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
+                    navigationIconContentColor = Color.White,
+                    actionIconContentColor = Color.White
                 )
             )
         }

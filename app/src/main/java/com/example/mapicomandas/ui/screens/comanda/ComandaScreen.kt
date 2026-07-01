@@ -38,6 +38,7 @@ import com.example.mapicomandas.data.model.*
 fun ComandaScreen(
     onVolver: () -> Unit,
     onCobrar: (Int) -> Unit,
+    onIrHome: () -> Unit = {},
     viewModel: ComandaViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -82,10 +83,16 @@ fun ComandaScreen(
                         Icon(Icons.Default.ArrowBack, "Volver")
                     }
                 },
+                actions = {
+                    IconButton(onClick = onIrHome) {
+                        Icon(Icons.Default.Home, "Inicio")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
+                    navigationIconContentColor = Color.White,
+                    actionIconContentColor = Color.White
                 )
             )
         }
