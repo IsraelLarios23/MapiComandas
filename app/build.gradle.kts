@@ -99,6 +99,8 @@ dependencies {
 
     // Coil
     implementation(libs.coil.compose)
+    // Escáner de código de barras (cámara)
+    implementation(libs.play.services.code.scanner)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

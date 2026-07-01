@@ -17,6 +17,7 @@ lifecycleViewmodelCompose = "2.8.7"
 securityCrypto = "1.1.0-alpha06"
 coil = "2.7.0"
 ksp = "2.0.21-1.0.28"
+codeScanner = "16.1.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -50,6 +51,8 @@ room-compiler = { group = "androidx.room", name = "room-compiler", version.ref =
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 # Coil
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+# Escáner de código de barras (ML Kit / Google Play Services)
+play-services-code-scanner = { group = "com.google.android.gms", name = "play-services-code-scanner", version.ref = "codeScanner" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

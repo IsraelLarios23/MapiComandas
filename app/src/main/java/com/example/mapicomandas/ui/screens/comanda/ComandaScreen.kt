@@ -143,6 +143,19 @@ fun ComandaScreen(
                     ) {
                         Icon(Icons.Default.Search, "Buscar")
                     }
+                    // Escanear con cámara
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    FilledIconButton(
+                        onClick = {
+                            com.example.mapicomandas.util.BarcodeScanner.escanear(
+                                context = ctx,
+                                onResultado = { codigo -> viewModel.buscarPorClave(codigo.trim()) },
+                                onError = { msg -> android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show() }
+                            )
+                        }
+                    ) {
+                        Icon(Icons.Default.QrCodeScanner, "Escanear")
+                    }
                 }
 
                 // Categorías — varias filas (FlowRow) con botones medianos
