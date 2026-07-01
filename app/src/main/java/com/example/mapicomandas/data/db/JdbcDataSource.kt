@@ -16,6 +16,10 @@ class JdbcDataSource @Inject constructor(
 ) {
     private var _connection: Connection? = null
 
+    // Estado de conexión observable (para banner de "sin conexión")
+    private val _conectado = kotlinx.coroutines.flow.MutableStateFlow(true)
+    val conectado: kotlinx.coroutines.flow.StateFlow<Boolean> = _conectado
+
     private fun buildUrl(): String {
         val cfg = session.dbConfig
         // jTDS: driver de SQL Server compatible con Android (mssql-jdbc falla con
@@ -39,8 +43,10 @@ class JdbcDataSource @Inject constructor(
             DriverManager.registerDriver(driver)
             val newConn = DriverManager.getConnection(buildUrl())
             _connection = newConn
+            _conectado.value = true
             newConn
         } catch (t: Throwable) {
+            _conectado.value = false
             // Convertir cualquier Error del driver (NoClassDefFound, etc.) en Exception capturable
             throw java.sql.SQLException(
                 "Error de conexión JDBC: ${t.javaClass.simpleName}: ${t.message}", t

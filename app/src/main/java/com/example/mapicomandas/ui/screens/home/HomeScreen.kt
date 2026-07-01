@@ -80,6 +80,19 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            val conectado by viewModel.conectado.collectAsState()
+            if (!conectado) {
+                Surface(color = Color(0xFFB71C1C), modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.CloudOff, null, tint = Color.White)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Sin conexión a la base de datos — reintentando…", color = Color.White, fontSize = 13.sp)
+                    }
+                }
+            }
             Text(
                 "¿Qué deseas hacer?",
                 modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp),
