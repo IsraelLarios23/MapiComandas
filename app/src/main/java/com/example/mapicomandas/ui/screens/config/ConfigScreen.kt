@@ -247,9 +247,10 @@ fun ConfigScreen(
             // ── NetPay (terminal de tarjeta) ──
             Text("Terminal NetPay", fontWeight = FontWeight.Bold, fontSize = 16.sp)
 
-            // Receptor embebido: URL a capturar en la terminal ("Configurar respuesta del servicio")
+            // Servicio de respuesta: modo callback externo (si hay URL) o receptor embebido
             val puertoReceptor = 8081
             val ipLocal = remember { com.example.mapicomandas.util.NetworkUtils.obtenerIpLocal() }
+            val modoCallback = uiState.npCallbackUrl.isNotBlank()
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFE8EAF6))) {
                 Column(Modifier.padding(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -258,15 +259,25 @@ fun ConfigScreen(
                         Text("Servicio de respuesta (configúralo en la terminal)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                     Spacer(Modifier.height(6.dp))
-                    if (ipLocal != null) {
-                        Text("En la terminal → \"Configurar respuesta del servicio\":", fontSize = 12.sp)
+                    if (modoCallback) {
+                        Text("Modo callback externo. En la terminal → \"Configurar respuesta del servicio\" apunta a tu servicio:", fontSize = 12.sp)
+                        SelectionContainer {
+                            Text(uiState.npCallbackUrl, fontSize = 13.sp, color = Color(0xFF1A237E), fontWeight = FontWeight.Bold)
+                        }
+                        Text("⚠ El callback DEBE escribir dbo.PagosNetPay en la MISMA base de datos que usa esta app " +
+                            "(la de arriba: ${uiState.host.ifBlank { "—" }}/${uiState.baseDatos.ifBlank { "—" }}), " +
+                            "correlacionando por traceability.mapiTxnId. Si escribe en otra BD, todo cobro dará timeout.",
+                            fontSize = 11.sp, color = Color(0xFFB71C1C))
+                    } else if (ipLocal != null) {
+                        Text("Receptor embebido. En la terminal → \"Configurar respuesta del servicio\":", fontSize = 12.sp)
                         SelectionContainer {
                             Column {
                                 Text("• IP/DNS:  http://$ipLocal:$puertoReceptor", fontSize = 13.sp, color = Color(0xFF1A237E), fontWeight = FontWeight.Bold)
                                 Text("• Path:  /netpay", fontSize = 13.sp, color = Color(0xFF1A237E), fontWeight = FontWeight.Bold)
                             }
                         }
-                        Text("La tablet y la terminal deben estar en la misma red Wi-Fi. Fija esta IP (reserva DHCP).",
+                        Text("La tablet y la terminal deben estar en la misma red Wi-Fi. Fija esta IP (reserva DHCP). " +
+                            "Para usar un callback externo, captura su URL abajo.",
                             fontSize = 11.sp, color = Color.Gray)
                     } else {
                         Text("Sin conexión de red: conecta la tablet al Wi-Fi para obtener su IP.",
@@ -297,6 +308,13 @@ fun ConfigScreen(
             OutlinedTextField(
                 value = uiState.npSerial, onValueChange = viewModel::setNpSerial,
                 label = { Text("Serial de la terminal") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+            )
+            OutlinedTextField(
+                value = uiState.npCallbackUrl, onValueChange = viewModel::setNpCallbackUrl,
+                label = { Text("Callback URL (opcional)") },
+                placeholder = { Text("https://tu-servicio.azurewebsites.net/api/netpay/callback") },
+                supportingText = { Text("Con valor: la app lee de PagosNetPay. Vacío: receptor embebido en la app.") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true
             )
             OutlinedTextField(
                 value = uiState.npAuthString, onValueChange = viewModel::setNpAuthString,

@@ -3,6 +3,8 @@ package com.example.mapicomandas.data.netpay
 import com.example.mapicomandas.data.ConfigService
 import com.example.mapicomandas.data.db.JdbcDataSource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -51,7 +53,8 @@ class NetPayService @Inject constructor(
             password = config.texto("NetPayPassword"),
             serialNumber = config.texto("NetPaySerialNumber"),
             storeId = config.texto("NetPayStoreId"),
-            responsePort = config.numero("NetPayResponsePort", 8081.0).toInt().takeIf { it in 1..65535 } ?: 8081
+            responsePort = config.numero("NetPayResponsePort", 8081.0).toInt().takeIf { it in 1..65535 } ?: 8081,
+            callbackUrl = config.texto("NetPayCallbackUrl").trim()
         )
     }
 
@@ -62,6 +65,11 @@ class NetPayService @Inject constructor(
      */
     suspend fun iniciarReceptor(): String? {
         val cfg = obtenerConfig()
+        if (cfg.usaCallbackExterno) {
+            // En modo callback no hay receptor local: detén el que pudiera estar corriendo
+            responseServer.detener()
+            return null
+        }
         return responseServer.asegurarIniciado(cfg.responsePort)
     }
 
@@ -118,6 +126,32 @@ class NetPayService @Inject constructor(
         onProgreso("Preparando transacción…")
         val mapiTxnId = java.util.UUID.randomUUID().toString()
 
+        // Modo callback externo (Azure/Spin): la terminal postea al servicio, que escribe
+        // en dbo.PagosNetPay; la app hace polling a la BD. Sin receptor embebido.
+        if (cfg.usaCallbackExterno) {
+            asegurarTabla()
+            runCatching {
+                db.execute(
+                    "INSERT INTO dbo.PagosNetPay (MapiTxnId, MontoSolicit, Estatus) VALUES (?,?, 'PENDIENTE')",
+                    listOf(mapiTxnId, monto)
+                )
+            }.onFailure { return NetPayResultado(false, "ERROR", mapiTxnId, mensaje = "No se pudo registrar la transacción: ${it.message}") }
+
+            onProgreso("Despachando a la terminal…")
+            val despachoCb = withContext(Dispatchers.IO) {
+                runCatching {
+                    val token = solicitarToken(cfg)
+                    despacharVenta(cfg, token, monto, mapiTxnId, folioNumber, msi)
+                }
+            }
+            if (despachoCb.isFailure)
+                return NetPayResultado(false, "ERROR", mapiTxnId, mensaje = "Error al despachar a la terminal: ${despachoCb.exceptionOrNull()?.message}")
+
+            onProgreso("Esperando terminal… presione la tarjeta")
+            return esperarResultadoBD(cfg, mapiTxnId)
+        }
+
+        // Modo receptor embebido (intranet): la app recibe el POST directo.
         // 0. Arrancar el receptor embebido (servicio de respuesta en la intranet)
         responseServer.asegurarIniciado(cfg.responsePort)?.let { err ->
             return NetPayResultado(false, "ERROR", mapiTxnId, mensaje = err)
@@ -165,6 +199,20 @@ class NetPayService @Inject constructor(
         } finally {
             responseServer.cancelar(mapiTxnId)
         }
+    }
+
+    /** Polling a dbo.PagosNetPay hasta resultado no-PENDIENTE o timeout (modo callback externo). */
+    private suspend fun esperarResultadoBD(cfg: NetPayConfig, mapiTxnId: String): NetPayResultado {
+        val deadline = System.currentTimeMillis() + cfg.pollTimeoutSeconds * 1000L
+        while (System.currentTimeMillis() < deadline) {
+            kotlin.coroutines.coroutineContext.ensureActive()   // permite cancelar
+            leerResultadoBD(mapiTxnId)?.let { return it }
+            delay(cfg.pollIntervalMs)
+        }
+        return NetPayResultado(false, "TIMEOUT", mapiTxnId,
+            mensaje = "Sin resultado en ${cfg.pollTimeoutSeconds}s. Verifica que la terminal apunte a " +
+                      "${cfg.callbackUrl} y que ese callback escriba dbo.PagosNetPay en la MISMA base de datos " +
+                      "que usa esta app (correlacionando por traceability.mapiTxnId).")
     }
 
     /** Lectura única de PagosNetPay (respaldo si existiera un callback externo). */
@@ -228,10 +276,30 @@ class NetPayService @Inject constructor(
         if (folioId.isBlank())
             return NetPayResultado(false, "ERROR", "", mensaje = "Falta el folio para reimprimir.")
 
+        val mapiTxnId = java.util.UUID.randomUUID().toString()
+
+        // Modo callback externo: la reimpresión re-entrega al callback → poll a la BD.
+        if (cfg.usaCallbackExterno) {
+            asegurarTabla()
+            runCatching {
+                db.execute(
+                    "INSERT INTO dbo.PagosNetPay (MapiTxnId, MontoSolicit, Estatus) VALUES (?,?, 'PENDIENTE')",
+                    listOf(mapiTxnId, 0.0)
+                )
+            }
+            val despachoCb = withContext(Dispatchers.IO) {
+                runCatching { despacharReimpresion(cfg, solicitarToken(cfg), folioId, mapiTxnId) }
+            }
+            if (despachoCb.isFailure)
+                return NetPayResultado(false, "ERROR", mapiTxnId,
+                    mensaje = "Error al solicitar reimpresión: ${despachoCb.exceptionOrNull()?.message}")
+            return esperarResultadoBD(cfg, mapiTxnId)
+        }
+
+        // Modo receptor embebido
         responseServer.asegurarIniciado(cfg.responsePort)?.let { err ->
             return NetPayResultado(false, "ERROR", "", mensaje = err)
         }
-        val mapiTxnId = java.util.UUID.randomUUID().toString()
         val espera = responseServer.registrar(mapiTxnId)
 
         val despacho = withContext(Dispatchers.IO) {

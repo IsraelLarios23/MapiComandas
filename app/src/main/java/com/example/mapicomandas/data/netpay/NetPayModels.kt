@@ -13,8 +13,12 @@ data class NetPayConfig(
     val storeId: String = "",
     val pollIntervalMs: Long = 1500,
     val pollTimeoutSeconds: Int = 90,
-    val responsePort: Int = 8081     // puerto del receptor embebido (servicio de respuesta)
+    val responsePort: Int = 8081,    // puerto del receptor embebido (servicio de respuesta)
+    val callbackUrl: String = ""     // si está definido → modo callback (poll a PagosNetPay)
 ) {
+    /** true = la terminal postea a un callback externo; false = receptor embebido en la app. */
+    val usaCallbackExterno: Boolean get() = callbackUrl.isNotBlank()
+
     val estaConfigurado: Boolean
         get() = baseUrl.isNotBlank() && serialNumber.isNotBlank() &&
                 storeId.isNotBlank() && username.isNotBlank() && authString.isNotBlank()

@@ -35,6 +35,7 @@ data class ConfigUiState(
     val npPassword: String = "netpay",
     val npSerial: String = "",
     val npStoreId: String = "9194",
+    val npCallbackUrl: String = "",   // vacío = receptor embebido; con valor = modo callback externo
     val npGuardando: Boolean = false,
     val npGuardado: Boolean = false,
     val npProbando: Boolean = false,
@@ -90,7 +91,8 @@ class ConfigViewModel @Inject constructor(
                     npUsername = pick("NetPayUsername", s.npUsername),
                     npPassword = pick("NetPayPassword", s.npPassword),
                     npSerial = pick("NetPaySerialNumber", s.npSerial),
-                    npStoreId = pick("NetPayStoreId", s.npStoreId)
+                    npStoreId = pick("NetPayStoreId", s.npStoreId),
+                    npCallbackUrl = pick("NetPayCallbackUrl", s.npCallbackUrl)
                 )
             }
         }
@@ -130,6 +132,7 @@ class ConfigViewModel @Inject constructor(
     fun setNpPassword(v: String) { _uiState.value = _uiState.value.copy(npPassword = v) }
     fun setNpSerial(v: String) { _uiState.value = _uiState.value.copy(npSerial = v) }
     fun setNpStoreId(v: String) { _uiState.value = _uiState.value.copy(npStoreId = v) }
+    fun setNpCallbackUrl(v: String) { _uiState.value = _uiState.value.copy(npCallbackUrl = v) }
 
     fun guardarNetPay() {
         val s = _uiState.value
@@ -144,7 +147,10 @@ class ConfigViewModel @Inject constructor(
                 repo.guardarConfig("NetPayPassword", s.npPassword)
                 repo.guardarConfig("NetPaySerialNumber", s.npSerial.trim())
                 repo.guardarConfig("NetPayStoreId", s.npStoreId.trim())
+                repo.guardarConfig("NetPayCallbackUrl", s.npCallbackUrl.trim())
                 configService.refrescar()
+                // Reinicia el receptor según el modo (embebido si callback quedó vacío)
+                netPayService.iniciarReceptor()
             }
             _uiState.value = _uiState.value.copy(
                 npGuardando = false,
