@@ -55,6 +55,29 @@ fun CobroScreen(
         }
     }
 
+    // Recuperación por reimpresión de folio cuando la terminal no respondió a tiempo
+    uiState.netPayReintentarFolio?.let { folio ->
+        AlertDialog(
+            onDismissRequest = { viewModel.descartarReintentoNetPay() },
+            title = { Text("Sin respuesta de la terminal") },
+            text = {
+                Text(
+                    "La terminal no confirmó el resultado. Si el cliente ya pasó la tarjeta, " +
+                    "el cargo pudo aprobarse. Puedes recuperar el resultado con una reimpresión " +
+                    "por folio ($folio)."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.reintentarNetPayPorFolio() }) {
+                    Text("Recuperar por folio")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.descartarReintentoNetPay() }) { Text("Cerrar") }
+            }
+        )
+    }
+
     // Diálogo de espera de la terminal NetPay (cancelable)
     if (uiState.procesandoNetPay) {
         AlertDialog(

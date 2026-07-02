@@ -38,10 +38,14 @@ class NetPayService @Inject constructor(
         fun rutaSale(v: String) =
             if (v.contains("/gateway/") || v.isBlank())
                 "/integration-service/transactions/sale" else v
+        fun rutaReprint(v: String) =
+            if (v.contains("/gateway/") || v.isBlank())
+                "/integration-service/transactions/reprint" else v
         return NetPayConfig(
             baseUrl = config.texto("NetPayBaseUrl", "https://api-154.api-netpay.com"),
             oauthPath = rutaOAuth(config.texto("NetPayOAuthPath", "/oauth-service/oauth/token")),
             salePath = rutaSale(config.texto("NetPaySalePath", "/integration-service/transactions/sale")),
+            reprintPath = rutaReprint(config.texto("NetPayReprintPath", "/integration-service/transactions/reprint")),
             authString = config.texto("NetPayAuthString"),
             username = config.texto("NetPayUsername"),
             password = config.texto("NetPayPassword"),
@@ -207,6 +211,67 @@ class NetPayService @Inject constructor(
             conn.outputStream.use { it.write(body.toByteArray()) }
             leerRespuesta(conn)
         }.isSuccess
+    }
+
+    /**
+     * Recupera el resultado de una venta cuyo resultado NO llegó al receptor
+     * (corte de red tras aprobar). NetPay no tiene consulta directa: se pide una
+     * REIMPRESIÓN por folio, que re-entrega el JSON completo al servicio de respuesta.
+     * Enviamos traceability.mapiTxnId propio para correlacionar la re-entrega.
+     *
+     * @param folioId el mismo folioNumber enviado en la venta.
+     */
+    suspend fun recuperarPorFolio(folioId: String): NetPayResultado {
+        val cfg = obtenerConfig()
+        if (!cfg.estaConfigurado)
+            return NetPayResultado(false, "ERROR", "", mensaje = "NetPay no está configurado.")
+        if (folioId.isBlank())
+            return NetPayResultado(false, "ERROR", "", mensaje = "Falta el folio para reimprimir.")
+
+        responseServer.asegurarIniciado(cfg.responsePort)?.let { err ->
+            return NetPayResultado(false, "ERROR", "", mensaje = err)
+        }
+        val mapiTxnId = java.util.UUID.randomUUID().toString()
+        val espera = responseServer.registrar(mapiTxnId)
+
+        val despacho = withContext(Dispatchers.IO) {
+            runCatching {
+                val token = solicitarToken(cfg)
+                despacharReimpresion(cfg, token, folioId, mapiTxnId)
+            }
+        }
+        if (despacho.isFailure) {
+            responseServer.cancelar(mapiTxnId)
+            return NetPayResultado(false, "ERROR", mapiTxnId,
+                mensaje = "Error al solicitar reimpresión: ${despacho.exceptionOrNull()?.message}")
+        }
+
+        return try {
+            kotlinx.coroutines.withTimeoutOrNull(cfg.pollTimeoutSeconds * 1000L) {
+                espera.await()
+            } ?: NetPayResultado(false, "TIMEOUT", mapiTxnId,
+                mensaje = "La terminal no re-entregó el resultado en ${cfg.pollTimeoutSeconds}s.")
+        } finally {
+            responseServer.cancelar(mapiTxnId)
+        }
+    }
+
+    private fun despacharReimpresion(cfg: NetPayConfig, token: String, folioId: String, mapiTxnId: String) {
+        val url = URL(cfg.baseUrl.trimEnd('/') + cfg.reprintPath)
+        val body = JSONObject().apply {
+            put("serialNumber", cfg.serialNumber)
+            put("storeId", cfg.storeId)
+            put("folioId", folioId)
+            put("orderId", "")   // vacío → NetPay busca por folioId
+            put("traceability", JSONObject().put("mapiTxnId", mapiTxnId))
+        }.toString()
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"; connectTimeout = 30_000; readTimeout = 30_000
+            setRequestProperty("Authorization", "Bearer $token")
+            setRequestProperty("Content-Type", "application/json"); doOutput = true
+        }
+        conn.outputStream.use { it.write(body.toByteArray()) }
+        leerRespuesta(conn)   // lanza si HTTP != 2xx
     }
 
     // ── HTTP ──────────────────────────────────────────────────────────────────

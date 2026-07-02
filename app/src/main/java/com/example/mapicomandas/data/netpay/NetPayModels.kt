@@ -5,6 +5,7 @@ data class NetPayConfig(
     val baseUrl: String = "https://api-154.api-netpay.com",
     val oauthPath: String = "/oauth-service/oauth/token",
     val salePath: String = "/integration-service/transactions/sale",
+    val reprintPath: String = "/integration-service/transactions/reprint",
     val authString: String = "",   // Basic <base64> sin el prefijo "Basic "
     val username: String = "",
     val password: String = "",

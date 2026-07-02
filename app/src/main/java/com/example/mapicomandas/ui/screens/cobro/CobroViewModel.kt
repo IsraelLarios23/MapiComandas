@@ -40,6 +40,7 @@ data class CobroUiState(
     val procesandoNetPay: Boolean = false,
     val mensajeNetPay: String? = null,
     val ultimoNetPay: com.example.mapicomandas.data.netpay.NetPayResultado? = null,
+    val netPayReintentarFolio: String? = null,   // no-null → ofrecer reimpresión por folio
     // División de cuenta
     val modoDivision: ModoDivision = ModoDivision.NINGUNO,
     val partesDivision: Int = 1,
@@ -100,16 +101,22 @@ class CobroViewModel @Inject constructor(
     }
 
     private var netPayJob: kotlinx.coroutines.Job? = null
+    // Últimos datos del intento NetPay, para recuperación por folio
+    private var netPayFormaPago: FormaPago? = null
+    private var netPayMonto: Double = 0.0
 
     /** Cobra el [monto] con la terminal NetPay; al aprobar, registra el pago. */
     fun cobrarConNetPay(formaPago: FormaPago, monto: Double) {
         if (monto <= 0.0) return
+        netPayFormaPago = formaPago
+        netPayMonto = monto
+        val folio = _uiState.value.comanda?.folio
         netPayJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 procesandoNetPay = true,
-                mensajeNetPay = "Iniciando…"
+                mensajeNetPay = "Iniciando…",
+                netPayReintentarFolio = null
             )
-            val folio = _uiState.value.comanda?.folio
             val res = try {
                 netPayService.cobrar(monto, folio) { msg ->
                     _uiState.value = _uiState.value.copy(mensajeNetPay = msg)
@@ -119,34 +126,78 @@ class CobroViewModel @Inject constructor(
             } catch (e: Throwable) {
                 com.example.mapicomandas.data.netpay.NetPayResultado(false, "ERROR", "", mensaje = e.message)
             }
+            aplicarResultadoNetPay(formaPago, monto, res, folio)
+        }
+    }
 
-            if (res.aprobada) {
-                val tarjeta = listOfNotNull(res.marca, res.ultimos4?.let { "****$it" })
-                    .joinToString(" ").ifBlank { "" }
-                val ref = res.authCode ?: res.orderId ?: ""
-                val pagos = _uiState.value.pagos.toMutableList()
-                pagos.add(
-                    PagoVenta(
-                        idFormaPago = formaPago.idFormaPago,
-                        nombreFormaPago = formaPago.nombre + if (tarjeta.isNotBlank()) " ($tarjeta)" else "",
-                        importe = monto,
-                        referencia = ref
-                    )
-                )
-                recalcularPagos(pagos)
-                _uiState.value = _uiState.value.copy(
-                    procesandoNetPay = false,
-                    mensajeNetPay = "Pago aprobado · auth ${res.authCode ?: "-"} $tarjeta".trim(),
-                    ultimoNetPay = res
-                )
-                // Imprime el comprobante (voucher) automáticamente si hay impresora
-                imprimirVoucherNetPay(res, "COMERCIO")
-            } else {
-                _uiState.value = _uiState.value.copy(
-                    procesandoNetPay = false,
-                    mensajeNetPay = "Pago no aprobado: ${res.mensaje ?: res.estatus}"
-                )
+    /**
+     * Recupera el resultado de un cobro que no llegó (timeout) pidiendo una
+     * reimpresión por folio; el JSON re-entregado cae en el receptor embebido.
+     */
+    fun reintentarNetPayPorFolio() {
+        val folio = _uiState.value.netPayReintentarFolio ?: return
+        val formaPago = netPayFormaPago ?: return
+        val monto = netPayMonto
+        netPayJob = viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                procesandoNetPay = true,
+                mensajeNetPay = "Solicitando reimpresión por folio…",
+                netPayReintentarFolio = null
+            )
+            val res = try {
+                netPayService.recuperarPorFolio(folio)
+            } catch (c: kotlinx.coroutines.CancellationException) {
+                com.example.mapicomandas.data.netpay.NetPayResultado(false, "CANCELADA", "", mensaje = "Reintento cancelado")
+            } catch (e: Throwable) {
+                com.example.mapicomandas.data.netpay.NetPayResultado(false, "ERROR", "", mensaje = e.message)
             }
+            aplicarResultadoNetPay(formaPago, monto, res, folio)
+        }
+    }
+
+    fun descartarReintentoNetPay() {
+        _uiState.value = _uiState.value.copy(netPayReintentarFolio = null)
+    }
+
+    /** Registra el pago si se aprobó; si fue timeout, ofrece recuperar por folio. */
+    private fun aplicarResultadoNetPay(
+        formaPago: FormaPago, monto: Double,
+        res: com.example.mapicomandas.data.netpay.NetPayResultado,
+        folio: String?
+    ) {
+        if (res.aprobada) {
+            val tarjeta = listOfNotNull(res.marca, res.ultimos4?.let { "****$it" })
+                .joinToString(" ").ifBlank { "" }
+            val ref = res.authCode ?: res.orderId ?: ""
+            val pagos = _uiState.value.pagos.toMutableList()
+            pagos.add(
+                PagoVenta(
+                    idFormaPago = formaPago.idFormaPago,
+                    nombreFormaPago = formaPago.nombre + if (tarjeta.isNotBlank()) " ($tarjeta)" else "",
+                    importe = monto,
+                    referencia = ref
+                )
+            )
+            recalcularPagos(pagos)
+            _uiState.value = _uiState.value.copy(
+                procesandoNetPay = false,
+                mensajeNetPay = "Pago aprobado · auth ${res.authCode ?: "-"} $tarjeta".trim(),
+                ultimoNetPay = res,
+                netPayReintentarFolio = null
+            )
+            imprimirVoucherNetPay(res, "COMERCIO")
+        } else if (res.estatus == "TIMEOUT" && !folio.isNullOrBlank()) {
+            // Ofrecer recuperación por reimpresión (el cargo pudo haberse aprobado)
+            _uiState.value = _uiState.value.copy(
+                procesandoNetPay = false,
+                mensajeNetPay = res.mensaje ?: "Sin respuesta de la terminal",
+                netPayReintentarFolio = folio
+            )
+        } else {
+            _uiState.value = _uiState.value.copy(
+                procesandoNetPay = false,
+                mensajeNetPay = "Pago no aprobado: ${res.mensaje ?: res.estatus}"
+            )
         }
     }
 
