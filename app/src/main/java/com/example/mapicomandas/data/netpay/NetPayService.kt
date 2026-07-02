@@ -3,8 +3,6 @@ package com.example.mapicomandas.data.netpay
 import com.example.mapicomandas.data.ConfigService
 import com.example.mapicomandas.data.db.JdbcDataSource
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -28,7 +26,8 @@ import javax.inject.Singleton
 @Singleton
 class NetPayService @Inject constructor(
     private val db: JdbcDataSource,
-    private val config: ConfigService
+    private val config: ConfigService,
+    private val responseServer: NetPayResponseServer
 ) {
     suspend fun obtenerConfig(): NetPayConfig {
         config.cargar()
@@ -47,8 +46,19 @@ class NetPayService @Inject constructor(
             username = config.texto("NetPayUsername"),
             password = config.texto("NetPayPassword"),
             serialNumber = config.texto("NetPaySerialNumber"),
-            storeId = config.texto("NetPayStoreId")
+            storeId = config.texto("NetPayStoreId"),
+            responsePort = config.numero("NetPayResponsePort", 8081.0).toInt().takeIf { it in 1..65535 } ?: 8081
         )
+    }
+
+    /**
+     * Arranca el receptor embebido (servicio de respuesta) para que la terminal pueda
+     * postearle — incluido el POST de prueba al registrar la URL. Idempotente.
+     * Devuelve el error o null.
+     */
+    suspend fun iniciarReceptor(): String? {
+        val cfg = obtenerConfig()
+        return responseServer.asegurarIniciado(cfg.responsePort)
     }
 
     /**
@@ -102,16 +112,23 @@ class NetPayService @Inject constructor(
             return NetPayResultado(false, "ERROR", "", mensaje = "NetPay no está configurado (Settings → Terminal NetPay).")
 
         onProgreso("Preparando transacción…")
-        asegurarTabla()
         val mapiTxnId = java.util.UUID.randomUUID().toString()
 
-        // 1. Insertar PENDIENTE
+        // 0. Arrancar el receptor embebido (servicio de respuesta en la intranet)
+        responseServer.asegurarIniciado(cfg.responsePort)?.let { err ->
+            return NetPayResultado(false, "ERROR", mapiTxnId, mensaje = err)
+        }
+        // Registrar la espera ANTES de despachar (la respuesta puede llegar muy rápido)
+        val esperaReceptor = responseServer.registrar(mapiTxnId)
+
+        // 1. Insertar PENDIENTE (best-effort, para historial; no bloquea el cobro)
+        asegurarTabla()
         runCatching {
             db.execute(
                 "INSERT INTO dbo.PagosNetPay (MapiTxnId, MontoSolicit, Estatus) VALUES (?,?, 'PENDIENTE')",
                 listOf(mapiTxnId, monto)
             )
-        }.onFailure { return NetPayResultado(false, "ERROR", mapiTxnId, mensaje = "No se pudo registrar la transacción: ${it.message}") }
+        }
 
         // 2. OAuth + 3. Sale
         onProgreso("Despachando a la terminal…")
@@ -121,46 +138,54 @@ class NetPayService @Inject constructor(
                 despacharVenta(cfg, token, monto, mapiTxnId, folioNumber, msi)
             }
         }
-        if (despacho.isFailure)
+        if (despacho.isFailure) {
+            responseServer.cancelar(mapiTxnId)
             return NetPayResultado(false, "ERROR", mapiTxnId, mensaje = "Error al despachar a la terminal: ${despacho.exceptionOrNull()?.message}")
-
-        // 4. Polling sobre PagosNetPay (cancelable)
-        onProgreso("Esperando terminal… presione la tarjeta")
-        return esperarResultado(cfg, mapiTxnId)
-    }
-
-    private suspend fun esperarResultado(cfg: NetPayConfig, mapiTxnId: String): NetPayResultado {
-        val deadline = System.currentTimeMillis() + cfg.pollTimeoutSeconds * 1000L
-        while (System.currentTimeMillis() < deadline) {
-            kotlin.coroutines.coroutineContext.ensureActive()   // permite cancelar
-            val fila = runCatching {
-                db.queryOne(
-                    """SELECT Estatus, ResponseCode, AuthCode, OrderId, Marca, Ultimos4, TipoTarjeta, MontoCobrado, Mensaje
-                       FROM dbo.PagosNetPay WHERE MapiTxnId=?""",
-                    listOf(mapiTxnId)
-                ) { rs ->
-                    NetPayResultado(
-                        aprobada = rs.getString("Estatus").equals("APROBADA", true),
-                        estatus = rs.getString("Estatus") ?: "PENDIENTE",
-                        mapiTxnId = mapiTxnId,
-                        responseCode = rs.getString("ResponseCode"),
-                        authCode = rs.getString("AuthCode"),
-                        orderId = rs.getString("OrderId"),
-                        marca = rs.getString("Marca"),
-                        ultimos4 = rs.getString("Ultimos4"),
-                        tipoTarjeta = rs.getString("TipoTarjeta"),
-                        montoCobrado = rs.getString("MontoCobrado"),
-                        mensaje = rs.getString("Mensaje")
-                    )
-                }
-            }.getOrNull()
-
-            if (fila != null && !fila.estatus.equals("PENDIENTE", true)) return fila
-            delay(cfg.pollIntervalMs)
         }
-        return NetPayResultado(false, "TIMEOUT", mapiTxnId,
-            mensaje = "La terminal no respondió en ${cfg.pollTimeoutSeconds}s.")
+
+        // 4. Esperar el POST de la terminal al receptor embebido (cancelable).
+        //    Respaldo: si venciera, una lectura a PagosNetPay (por si hubiera webhook externo).
+        onProgreso("Esperando terminal… presione la tarjeta")
+        return try {
+            kotlinx.coroutines.withTimeoutOrNull(cfg.pollTimeoutSeconds * 1000L) {
+                esperaReceptor.await()
+            } ?: run {
+                // Respaldo: ¿algún callback externo escribió el resultado?
+                leerResultadoBD(mapiTxnId) ?: NetPayResultado(
+                    false, "TIMEOUT", mapiTxnId,
+                    mensaje = "La terminal no respondió en ${cfg.pollTimeoutSeconds}s. " +
+                              "Verifica que en la terminal esté configurado el servicio de respuesta " +
+                              "hacia ${com.example.mapicomandas.util.NetworkUtils.urlReceptorNetPay(cfg.responsePort)}"
+                )
+            }
+        } finally {
+            responseServer.cancelar(mapiTxnId)
+        }
     }
+
+    /** Lectura única de PagosNetPay (respaldo si existiera un callback externo). */
+    private suspend fun leerResultadoBD(mapiTxnId: String): NetPayResultado? =
+        runCatching {
+            db.queryOne(
+                """SELECT Estatus, ResponseCode, AuthCode, OrderId, Marca, Ultimos4, TipoTarjeta, MontoCobrado, Mensaje
+                   FROM dbo.PagosNetPay WHERE MapiTxnId=?""",
+                listOf(mapiTxnId)
+            ) { rs ->
+                NetPayResultado(
+                    aprobada = rs.getString("Estatus").equals("APROBADA", true),
+                    estatus = rs.getString("Estatus") ?: "PENDIENTE",
+                    mapiTxnId = mapiTxnId,
+                    responseCode = rs.getString("ResponseCode"),
+                    authCode = rs.getString("AuthCode"),
+                    orderId = rs.getString("OrderId"),
+                    marca = rs.getString("Marca"),
+                    ultimos4 = rs.getString("Ultimos4"),
+                    tipoTarjeta = rs.getString("TipoTarjeta"),
+                    montoCobrado = rs.getString("MontoCobrado"),
+                    mensaje = rs.getString("Mensaje")
+                )
+            }
+        }.getOrNull()?.takeIf { !it.estatus.equals("PENDIENTE", true) }
 
     /** Cancela una venta del mismo día (orderId del resultado). */
     suspend fun cancelar(orderId: String): Boolean = withContext(Dispatchers.IO) {

@@ -3,6 +3,7 @@ package com.example.mapicomandas.ui.screens.config
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -245,6 +246,35 @@ fun ConfigScreen(
 
             // ── NetPay (terminal de tarjeta) ──
             Text("Terminal NetPay", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+
+            // Receptor embebido: URL a capturar en la terminal ("Configurar respuesta del servicio")
+            val puertoReceptor = 8081
+            val ipLocal = remember { com.example.mapicomandas.util.NetworkUtils.obtenerIpLocal() }
+            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFE8EAF6))) {
+                Column(Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.SettingsEthernet, null, tint = Color(0xFF3949AB), modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Servicio de respuesta (configúralo en la terminal)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    if (ipLocal != null) {
+                        Text("En la terminal → \"Configurar respuesta del servicio\":", fontSize = 12.sp)
+                        SelectionContainer {
+                            Column {
+                                Text("• IP/DNS:  http://$ipLocal:$puertoReceptor", fontSize = 13.sp, color = Color(0xFF1A237E), fontWeight = FontWeight.Bold)
+                                Text("• Path:  /netpay", fontSize = 13.sp, color = Color(0xFF1A237E), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        Text("La tablet y la terminal deben estar en la misma red Wi-Fi. Fija esta IP (reserva DHCP).",
+                            fontSize = 11.sp, color = Color.Gray)
+                    } else {
+                        Text("Sin conexión de red: conecta la tablet al Wi-Fi para obtener su IP.",
+                            fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = uiState.npBaseUrl, onValueChange = viewModel::setNpBaseUrl,
                 label = { Text("Base URL") }, placeholder = { Text("https://api-154.api-netpay.com") },

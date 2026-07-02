@@ -11,7 +11,8 @@ data class NetPayConfig(
     val serialNumber: String = "",
     val storeId: String = "",
     val pollIntervalMs: Long = 1500,
-    val pollTimeoutSeconds: Int = 90
+    val pollTimeoutSeconds: Int = 90,
+    val responsePort: Int = 8081     // puerto del receptor embebido (servicio de respuesta)
 ) {
     val estaConfigurado: Boolean
         get() = baseUrl.isNotBlank() && serialNumber.isNotBlank() &&

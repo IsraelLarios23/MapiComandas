@@ -60,7 +60,11 @@ class ConfigViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(cargarEstadoInicial())
     val uiState: StateFlow<ConfigUiState> = _uiState
 
-    init { cargarNetPay() }
+    init {
+        cargarNetPay()
+        // Arranca el receptor embebido para que la terminal pueda registrar/probar su URL
+        viewModelScope.launch { runCatching { netPayService.iniciarReceptor() } }
+    }
 
     private fun cargarNetPay() {
         if (!session.estaConfigurado) return

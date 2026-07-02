@@ -102,6 +102,9 @@ dependencies {
     // Escáner de código de barras (cámara)
     implementation(libs.play.services.code.scanner)
 
+    // Servidor HTTP embebido para recibir la respuesta de la terminal NetPay (intranet)
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
