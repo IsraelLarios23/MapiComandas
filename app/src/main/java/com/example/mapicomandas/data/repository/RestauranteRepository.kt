@@ -130,5 +130,9 @@ interface RestauranteRepository {
 
     // ── Configuración ─────────────────────────────────────────────────────────
     suspend fun obtenerConfiguracion(idTienda: Int, idCaja: Int): List<ConfigEntry>
+    /** Config scoped por caja/tienda (dbo.ConfiguracionSistemaScope), precedencia caja>tienda>global. */
+    suspend fun obtenerConfiguracionScope(idTienda: Int, idCaja: Int): List<ConfigEntry>
     suspend fun guardarConfig(clave: String, valor: String)
+    /** Guarda una clave en dbo.ConfiguracionSistemaScope para una caja/tienda específica. */
+    suspend fun guardarConfigScope(clave: String, valor: String, idTienda: Int, idCaja: Int)
 }

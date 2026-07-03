@@ -19,8 +19,19 @@ class ConfigService @Inject constructor(
 
     suspend fun cargar() {
         mapa = runCatching {
-            repo.obtenerConfiguracion(session.idTienda, session.idCaja)
-                .associate { it.clave.trim().uppercase() to (it.valor.trim()) }
+            // 1) Base global: dbo.ConfiguracionSistema
+            val efectivo = repo.obtenerConfiguracion(session.idTienda, session.idCaja)
+                .associate { it.clave.trim().uppercase() to it.valor.trim() }
+                .toMutableMap()
+            // 2) Overlay por caja/tienda: dbo.ConfiguracionSistemaScope (precedencia caja>tienda>global),
+            //    pisa la base global. La primera ocurrencia de cada clave (más específica) gana.
+            val yaPuesto = HashSet<String>()
+            for (e in repo.obtenerConfiguracionScope(session.idTienda, session.idCaja)) {
+                val k = e.clave.trim().uppercase()
+                if (!yaPuesto.add(k)) continue
+                efectivo[k] = e.valor.trim()
+            }
+            efectivo
         }.getOrNull()
     }
 

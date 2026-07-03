@@ -383,7 +383,7 @@ fun ConfigScreen(
             if (uiState.npDiagMostrado) {
                 Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5))) {
                     Column(Modifier.padding(10.dp)) {
-                        Text("dbo.PagosNetPay leído por esta app · BD ${uiState.host}/${uiState.baseDatos}",
+                        Text("dbo.PagosNetPay · BD ${uiState.host}/${uiState.baseDatos} · Caja ${uiState.idCaja} (config scope por caja)",
                             fontSize = 11.sp, color = Color.Gray)
                         uiState.npDiagAutotest?.let { at ->
                             Spacer(Modifier.height(6.dp))

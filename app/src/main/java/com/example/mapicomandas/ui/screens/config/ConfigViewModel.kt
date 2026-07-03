@@ -153,15 +153,18 @@ class ConfigViewModel @Inject constructor(
         _uiState.value = s.copy(npGuardando = true, npGuardado = false)
         viewModelScope.launch {
             val r = runCatching {
-                repo.guardarConfig("NetPayBaseUrl", s.npBaseUrl.trim())
-                repo.guardarConfig("NetPayOAuthPath", s.npOAuthPath.trim())
-                repo.guardarConfig("NetPaySalePath", s.npSalePath.trim())
-                repo.guardarConfig("NetPayAuthString", s.npAuthString.trim())
-                repo.guardarConfig("NetPayUsername", s.npUsername.trim())
-                repo.guardarConfig("NetPayPassword", s.npPassword)
-                repo.guardarConfig("NetPaySerialNumber", s.npSerial.trim())
-                repo.guardarConfig("NetPayStoreId", s.npStoreId.trim())
-                repo.guardarConfig("NetPayCallbackUrl", s.npCallbackUrl.trim())
+                // Guardar por caja/tienda (dbo.ConfiguracionSistemaScope), igual que MapiPOS,
+                // para que la config del terminal/callback sea específica de esta caja.
+                val t = session.idTienda; val c = session.idCaja
+                repo.guardarConfigScope("NetPayBaseUrl", s.npBaseUrl.trim(), t, c)
+                repo.guardarConfigScope("NetPayOAuthPath", s.npOAuthPath.trim(), t, c)
+                repo.guardarConfigScope("NetPaySalePath", s.npSalePath.trim(), t, c)
+                repo.guardarConfigScope("NetPayAuthString", s.npAuthString.trim(), t, c)
+                repo.guardarConfigScope("NetPayUsername", s.npUsername.trim(), t, c)
+                repo.guardarConfigScope("NetPayPassword", s.npPassword, t, c)
+                repo.guardarConfigScope("NetPaySerialNumber", s.npSerial.trim(), t, c)
+                repo.guardarConfigScope("NetPayStoreId", s.npStoreId.trim(), t, c)
+                repo.guardarConfigScope("NetPayCallbackUrl", s.npCallbackUrl.trim(), t, c)
                 configService.refrescar()
                 // Reinicia el receptor según el modo (embebido si callback quedó vacío)
                 netPayService.iniciarReceptor()

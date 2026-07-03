@@ -1684,6 +1684,27 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
             "SELECT Clave, Valor FROM dbo.ConfiguracionSistema"
         ) { rs -> ConfigEntry(rs.getString("Clave"), rs.getString("Valor") ?: "") }
 
+    /**
+     * Config scoped (dbo.ConfiguracionSistemaScope) resuelta como MapiPOS SystemConfigService:
+     * precedencia caja > tienda > scope-global. Tolerante a esquema (vacío si no existe la tabla).
+     * Devuelve las filas en orden de precedencia (la primera de cada Clave gana).
+     */
+    override suspend fun obtenerConfiguracionScope(idTienda: Int, idCaja: Int): List<ConfigEntry> =
+        runCatching {
+            db.query(
+                """SELECT Clave, Valor FROM dbo.ConfiguracionSistemaScope
+                   WHERE (? > 0 AND IdCaja = ?)
+                      OR (? > 0 AND IdCaja IS NULL AND IdTienda = ?)
+                      OR (IdCaja IS NULL AND IdTienda IS NULL)
+                   ORDER BY CASE
+                       WHEN ? > 0 AND IdCaja = ? THEN 0
+                       WHEN ? > 0 AND IdCaja IS NULL AND IdTienda = ? THEN 1
+                       ELSE 2 END,
+                     IdConfiguracionScope DESC""",
+                listOf(idCaja, idCaja, idTienda, idTienda, idCaja, idCaja, idTienda, idTienda)
+            ) { rs -> ConfigEntry(rs.getString("Clave"), rs.getString("Valor") ?: "") }
+        }.getOrDefault(emptyList())
+
     override suspend fun guardarConfig(clave: String, valor: String) {
         db.execute(
             """MERGE dbo.ConfiguracionSistema AS d
@@ -1691,6 +1712,23 @@ class RestauranteRepositoryJdbcImpl @Inject constructor(
                WHEN MATCHED THEN UPDATE SET Valor = s.Valor
                WHEN NOT MATCHED THEN INSERT (Clave, Valor) VALUES (s.Clave, s.Valor);""",
             listOf(clave, valor)
+        )
+    }
+
+    override suspend fun guardarConfigScope(clave: String, valor: String, idTienda: Int, idCaja: Int) {
+        db.execute(
+            """IF OBJECT_ID('dbo.ConfiguracionSistemaScope','U') IS NULL
+                 CREATE TABLE dbo.ConfiguracionSistemaScope (
+                   IdConfiguracionScope INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                   Clave NVARCHAR(150) NOT NULL, Valor NVARCHAR(MAX) NULL,
+                   IdTienda INT NULL, IdCaja INT NULL,
+                   FechaModificacion DATETIME NOT NULL CONSTRAINT DF_CfgScope_Fec DEFAULT GETDATE());
+               UPDATE dbo.ConfiguracionSistemaScope SET Valor=?, FechaModificacion=GETDATE()
+                 WHERE Clave=? AND ISNULL(IdTienda,0)=ISNULL(?,0) AND ISNULL(IdCaja,0)=ISNULL(?,0);
+               IF @@ROWCOUNT=0
+                 INSERT INTO dbo.ConfiguracionSistemaScope (Clave, Valor, IdTienda, IdCaja)
+                 VALUES (?,?,?,?);""",
+            listOf(valor, clave, idTienda, idCaja, clave, valor, idTienda, idCaja)
         )
     }
 
