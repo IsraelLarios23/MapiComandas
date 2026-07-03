@@ -43,6 +43,7 @@ data class ConfigUiState(
     val npDiag: List<com.example.mapicomandas.data.netpay.NetPayFila> = emptyList(),
     val npDiagCargando: Boolean = false,
     val npDiagMostrado: Boolean = false,
+    val npDiagAutotest: String? = null,
     val probando: Boolean = false,
     val conectado: Boolean = false,
     val error: String? = null
@@ -139,10 +140,11 @@ class ConfigViewModel @Inject constructor(
 
     /** Diagnóstico: lee las últimas filas de dbo.PagosNetPay con la conexión de la app. */
     fun diagnosticarNetPay() {
-        _uiState.value = _uiState.value.copy(npDiagCargando = true, npDiagMostrado = true)
+        _uiState.value = _uiState.value.copy(npDiagCargando = true, npDiagMostrado = true, npDiagAutotest = null)
         viewModelScope.launch {
+            val autotest = runCatching { netPayService.autotestCorrelacion() }.getOrElse { "❌ ${it.message}" }
             val filas = runCatching { netPayService.ultimasTransacciones(15) }.getOrDefault(emptyList())
-            _uiState.value = _uiState.value.copy(npDiag = filas, npDiagCargando = false)
+            _uiState.value = _uiState.value.copy(npDiag = filas, npDiagAutotest = autotest, npDiagCargando = false)
         }
     }
 

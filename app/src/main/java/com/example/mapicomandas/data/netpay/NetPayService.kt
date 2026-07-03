@@ -90,6 +90,38 @@ class NetPayService @Inject constructor(
         }.getOrElse { emptyList() }
     }
 
+    /**
+     * Auto-test decisivo: inserta una fila de prueba y la vuelve a leer POR MapiTxnId,
+     * usando exactamente el mismo camino (CONVERT) que el cobro real. Aísla si el
+     * problema es de la app (driver/consulta) o del callback (no escribe/no correlaciona).
+     */
+    suspend fun autotestCorrelacion(): String {
+        asegurarTabla()
+        val id = java.util.UUID.randomUUID().toString()
+        return runCatching {
+            db.execute(
+                "INSERT INTO dbo.PagosNetPay (MapiTxnId, MontoSolicit, Estatus) VALUES (CONVERT(uniqueidentifier, ?), 0, 'AUTOTEST')",
+                listOf(id)
+            )
+            val guardado = db.queryOne(
+                "SELECT CONVERT(char(36), MapiTxnId) AS G FROM dbo.PagosNetPay WHERE MapiTxnId = CONVERT(uniqueidentifier, ?)",
+                listOf(id)
+            ) { rs -> rs.getString("G") }
+            runCatching {
+                db.execute("DELETE FROM dbo.PagosNetPay WHERE MapiTxnId = CONVERT(uniqueidentifier, ?)", listOf(id))
+            }
+            when {
+                guardado == null ->
+                    "❌ Round-trip FALLA: la app NO encuentra la fila que acaba de insertar. Problema de driver/consulta en la app."
+                !guardado.equals(id, true) ->
+                    "⚠ GUID guardado ($guardado) ≠ enviado (${id}). Aún hay mismatch de formato."
+                else ->
+                    "✅ Round-trip OK (id ${id.take(8)}…). La app escribe/lee bien por MapiTxnId en ESTA base → " +
+                    "si un cobro real no aparece como APROBADA, es que el CALLBACK no está escribiendo una fila con ese MapiTxnId en ESTA base."
+            }
+        }.getOrElse { "❌ Error de BD en autotest: ${it.message}" }
+    }
+
     suspend fun iniciarReceptor(): String? {
         val cfg = obtenerConfig()
         if (cfg.usaCallbackExterno) {

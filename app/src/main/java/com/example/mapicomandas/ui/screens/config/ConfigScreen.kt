@@ -385,6 +385,13 @@ fun ConfigScreen(
                     Column(Modifier.padding(10.dp)) {
                         Text("dbo.PagosNetPay leído por esta app · BD ${uiState.host}/${uiState.baseDatos}",
                             fontSize = 11.sp, color = Color.Gray)
+                        uiState.npDiagAutotest?.let { at ->
+                            Spacer(Modifier.height(6.dp))
+                            SelectionContainer {
+                                Text(at, fontSize = 12.sp,
+                                    color = if (at.startsWith("✅")) Color(0xFF2E7D32) else Color(0xFFB71C1C))
+                            }
+                        }
                         Spacer(Modifier.height(6.dp))
                         when {
                             uiState.npDiagCargando -> CircularProgressIndicator(modifier = Modifier.size(20.dp))
