@@ -370,6 +370,58 @@ fun ConfigScreen(
                 )
             }
 
+            // ── Diagnóstico: últimas transacciones en dbo.PagosNetPay (conexión de la app) ──
+            OutlinedButton(
+                onClick = { viewModel.diagnosticarNetPay() },
+                enabled = !uiState.npDiagCargando,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Diagnóstico: últimas transacciones (BD)")
+            }
+            if (uiState.npDiagMostrado) {
+                Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5))) {
+                    Column(Modifier.padding(10.dp)) {
+                        Text("dbo.PagosNetPay leído por esta app · BD ${uiState.host}/${uiState.baseDatos}",
+                            fontSize = 11.sp, color = Color.Gray)
+                        Spacer(Modifier.height(6.dp))
+                        when {
+                            uiState.npDiagCargando -> CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                            uiState.npDiag.isEmpty() -> Text(
+                                "Sin filas. Si acabas de cobrar y no aparece ni el PENDIENTE, la app no está " +
+                                "escribiendo/leyendo esta tabla en esta BD.", fontSize = 12.sp, color = Color(0xFFB71C1C))
+                            else -> {
+                                val hayAprobada = uiState.npDiag.any { it.estatus.equals("APROBADA", true) }
+                                if (!hayAprobada) {
+                                    Text("⚠ Solo hay filas PENDIENTE — el callback NO está escribiendo APROBADA en ESTA base. " +
+                                        "Revisa que el connection string de tu callback en Azure apunte a ${uiState.host}/${uiState.baseDatos}.",
+                                        fontSize = 12.sp, color = Color(0xFFB71C1C))
+                                    Spacer(Modifier.height(6.dp))
+                                }
+                                uiState.npDiag.forEach { f ->
+                                    val col = when (f.estatus.uppercase()) {
+                                        "APROBADA" -> Color(0xFF2E7D32)
+                                        "RECHAZADA" -> Color(0xFFC62828)
+                                        else -> Color(0xFFF9A825)
+                                    }
+                                    SelectionContainer {
+                                        Text(
+                                            "• ${f.estatus.padEnd(9)} ${f.mapiTxnId.take(8)}… " +
+                                            (f.authCode?.let { "auth $it " } ?: "") +
+                                            (f.monto?.let { "$$it " } ?: "") +
+                                            "alta ${f.fechaAlta.takeLast(8)}" +
+                                            (f.fechaResp?.let { " · resp ${it.takeLast(8)}" } ?: ""),
+                                            fontSize = 11.sp, color = col
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             Spacer(Modifier.height(8.dp))
 
             Button(

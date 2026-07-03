@@ -63,6 +63,33 @@ class NetPayService @Inject constructor(
      * postearle — incluido el POST de prueba al registrar la URL. Idempotente.
      * Devuelve el error o null.
      */
+    /**
+     * Diagnóstico: últimas transacciones de dbo.PagosNetPay LEÍDAS POR LA CONEXIÓN DE LA APP.
+     * Si el callback externo escribiera en otra BD, aquí NO aparecerían filas APROBADA
+     * (solo los PENDIENTE que inserta la propia app) → prueba directa del problema de "no llega".
+     */
+    suspend fun ultimasTransacciones(n: Int = 15): List<NetPayFila> {
+        asegurarTabla()
+        val top = n.coerceIn(1, 100)
+        return runCatching {
+            db.query(
+                """SELECT TOP $top MapiTxnId, Estatus, AuthCode, OrderId, MontoCobrado, FechaAlta, FechaResp
+                   FROM dbo.PagosNetPay ORDER BY FechaAlta DESC""",
+                emptyList()
+            ) { rs ->
+                NetPayFila(
+                    mapiTxnId = rs.getString("MapiTxnId") ?: "",
+                    estatus = rs.getString("Estatus") ?: "",
+                    authCode = rs.getString("AuthCode"),
+                    orderId = rs.getString("OrderId"),
+                    monto = rs.getString("MontoCobrado"),
+                    fechaAlta = rs.getTimestamp("FechaAlta")?.toString()?.take(19) ?: "",
+                    fechaResp = rs.getTimestamp("FechaResp")?.toString()?.take(19)
+                )
+            }
+        }.getOrElse { emptyList() }
+    }
+
     suspend fun iniciarReceptor(): String? {
         val cfg = obtenerConfig()
         if (cfg.usaCallbackExterno) {

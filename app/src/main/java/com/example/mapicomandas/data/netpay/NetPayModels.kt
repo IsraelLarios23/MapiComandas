@@ -24,6 +24,17 @@ data class NetPayConfig(
                 storeId.isNotBlank() && username.isNotBlank() && authString.isNotBlank()
 }
 
+/** Fila de dbo.PagosNetPay para el diagnóstico en la app. */
+data class NetPayFila(
+    val mapiTxnId: String,
+    val estatus: String,
+    val authCode: String?,
+    val orderId: String?,
+    val monto: String?,
+    val fechaAlta: String,
+    val fechaResp: String?
+)
+
 /** Resultado del cobro con terminal NetPay. */
 data class NetPayResultado(
     val aprobada: Boolean,
