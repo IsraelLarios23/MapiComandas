@@ -73,7 +73,7 @@ class NetPayService @Inject constructor(
         val top = n.coerceIn(1, 100)
         return runCatching {
             db.query(
-                """SELECT TOP $top MapiTxnId, Estatus, AuthCode, OrderId, MontoCobrado, FechaAlta, FechaResp
+                """SELECT TOP $top CONVERT(char(36), MapiTxnId) AS MapiTxnId, Estatus, AuthCode, OrderId, MontoCobrado, FechaAlta, FechaResp
                    FROM dbo.PagosNetPay ORDER BY FechaAlta DESC""",
                 emptyList()
             ) { rs ->
@@ -159,7 +159,7 @@ class NetPayService @Inject constructor(
             asegurarTabla()
             runCatching {
                 db.execute(
-                    "INSERT INTO dbo.PagosNetPay (MapiTxnId, MontoSolicit, Estatus) VALUES (?,?, 'PENDIENTE')",
+                    "INSERT INTO dbo.PagosNetPay (MapiTxnId, MontoSolicit, Estatus) VALUES (CONVERT(uniqueidentifier, ?),?, 'PENDIENTE')",
                     listOf(mapiTxnId, monto)
                 )
             }.onFailure { return NetPayResultado(false, "ERROR", mapiTxnId, mensaje = "No se pudo registrar la transacción: ${it.message}") }
@@ -190,7 +190,7 @@ class NetPayService @Inject constructor(
         asegurarTabla()
         runCatching {
             db.execute(
-                "INSERT INTO dbo.PagosNetPay (MapiTxnId, MontoSolicit, Estatus) VALUES (?,?, 'PENDIENTE')",
+                "INSERT INTO dbo.PagosNetPay (MapiTxnId, MontoSolicit, Estatus) VALUES (CONVERT(uniqueidentifier, ?),?, 'PENDIENTE')",
                 listOf(mapiTxnId, monto)
             )
         }
@@ -247,7 +247,7 @@ class NetPayService @Inject constructor(
         runCatching {
             db.queryOne(
                 """SELECT Estatus, ResponseCode, AuthCode, OrderId, Marca, Ultimos4, TipoTarjeta, MontoCobrado, Mensaje
-                   FROM dbo.PagosNetPay WHERE MapiTxnId=?""",
+                   FROM dbo.PagosNetPay WHERE MapiTxnId = CONVERT(uniqueidentifier, ?)""",
                 listOf(mapiTxnId)
             ) { rs ->
                 NetPayResultado(
@@ -310,7 +310,7 @@ class NetPayService @Inject constructor(
             asegurarTabla()
             runCatching {
                 db.execute(
-                    "INSERT INTO dbo.PagosNetPay (MapiTxnId, MontoSolicit, Estatus) VALUES (?,?, 'PENDIENTE')",
+                    "INSERT INTO dbo.PagosNetPay (MapiTxnId, MontoSolicit, Estatus) VALUES (CONVERT(uniqueidentifier, ?),?, 'PENDIENTE')",
                     listOf(mapiTxnId, 0.0)
                 )
             }
