@@ -132,6 +132,48 @@ class SessionManager @Inject constructor(
         _fastFood.value = activo
     }
 
+    // ── API central (identidad) ───────────────────────────────────────────────
+    // Migración a https://api.mapi.codesi.mx: token de dispositivo (vinculación) + token
+    // de sesión (login, 30 días). Reemplaza host/usuario/password de SQL (se retiran al
+    // completar el swap del repositorio a HTTP en la Fase 2).
+    val apiBaseUrl get() = prefs.getString("apiBaseUrl", "https://api.mapi.codesi.mx") ?: "https://api.mapi.codesi.mx"
+    val deviceToken get() = prefs.getString("deviceToken", "") ?: ""
+    val sessionToken get() = prefs.getString("sessionToken", "") ?: ""
+    val negocio get() = prefs.getString("negocio", "") ?: ""
+    val estaVinculado get() = deviceToken.isNotBlank()
+
+    fun guardarApiBaseUrl(url: String) {
+        prefs.edit().putString("apiBaseUrl", url.trim().trimEnd('/')).apply()
+    }
+
+    /** Guarda el token de DISPOSITIVO tras /v1/vincular. */
+    fun guardarVinculacion(token: String, negocio: String) {
+        prefs.edit().putString("deviceToken", token).putString("negocio", negocio).apply()
+    }
+
+    /** Guarda el token de SESIÓN tras /v1/login. */
+    fun guardarSesionApi(token: String, idUsuario: Int, nombre: String) {
+        prefs.edit()
+            .putString("sessionToken", token)
+            .putInt("idUsuario", idUsuario)
+            .putString("nombreUsuario", nombre)
+            .apply()
+        _sesion.value = _sesion.value.copy(idUsuario = idUsuario)
+        _nombreUsuario.value = nombre
+    }
+
+    /** Cierra sesión de API (conserva la vinculación del dispositivo). */
+    fun cerrarSesionApi() {
+        prefs.edit().remove("sessionToken").remove("nombreUsuario").apply()
+        _nombreUsuario.value = ""
+    }
+
+    /** Desvincula el dispositivo (obliga a re-emparejar). */
+    fun desvincular() {
+        prefs.edit().remove("deviceToken").remove("sessionToken").remove("nombreUsuario").apply()
+        _nombreUsuario.value = ""
+    }
+
     val dbConfig get() = _sesion.value.dbConfig
     val idTienda get() = _sesion.value.idTienda
     val idCaja get() = _sesion.value.idCaja

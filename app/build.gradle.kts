@@ -5,6 +5,7 @@ plugins {
     id("kotlin-kapt")                 // para Hilt (sin versión — viene con kotlin-android)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)           // solo para Room
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.0.21"  // DTOs de la API central
 }
 
 android {
@@ -104,6 +105,10 @@ dependencies {
 
     // Servidor HTTP embebido para recibir la respuesta de la terminal NetPay (intranet)
     implementation("org.nanohttpd:nanohttpd:2.3.1")
+
+    // Cliente de la API central (reemplaza jTDS en el dominio de restaurante)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
