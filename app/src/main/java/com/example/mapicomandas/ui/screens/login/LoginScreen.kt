@@ -26,6 +26,7 @@ import com.example.mapicomandas.R
 fun LoginScreen(
     onLoginExitoso: () -> Unit,
     onIrAConfig: () -> Unit,
+    onNecesitaVincular: () -> Unit = {},
     viewModel: LoginViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -34,6 +35,9 @@ fun LoginScreen(
 
     LaunchedEffect(uiState.autenticado) {
         if (uiState.autenticado) onLoginExitoso()
+    }
+    LaunchedEffect(uiState.necesitaVincular) {
+        if (uiState.necesitaVincular) onNecesitaVincular()
     }
     LaunchedEffect(uiState.error) {
         uiState.error?.let { snackbarHostState.showSnackbar(it); viewModel.limpiarError() }

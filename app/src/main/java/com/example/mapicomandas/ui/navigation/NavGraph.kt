@@ -21,6 +21,7 @@ import com.example.mapicomandas.ui.screens.mesas.MesasScreen
 
 object Routes {
     const val CONFIG = "config"
+    const val VINCULAR = "vincular"
     const val LOGIN = "login"
     const val HOME = "home"
     const val SETTINGS = "settings"
@@ -44,8 +45,8 @@ fun MapiNavGraph(sessionManager: SessionManager) {
     val navController = rememberNavController()
     val sesion by sessionManager.sesion.collectAsState()
 
-    // Arranque: si no hay conexión configurada → Config; si no → Login
-    val startDest = if (sesion.dbConfig.host.isBlank()) Routes.CONFIG else Routes.LOGIN
+    // Arranque: si la tablet no está vinculada a la API central → Vincular; si no → Login
+    val startDest = if (!sessionManager.estaVinculado) Routes.VINCULAR else Routes.LOGIN
 
     fun irHome() {
         navController.navigate(Routes.HOME) {
@@ -66,6 +67,17 @@ fun MapiNavGraph(sessionManager: SessionManager) {
             )
         }
 
+        // ── Vinculación del dispositivo con la API central ─────────────────────
+        composable(Routes.VINCULAR) {
+            com.example.mapicomandas.ui.screens.vincular.VinculacionScreen(
+                onVinculado = {
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(Routes.VINCULAR) { inclusive = true }
+                    }
+                }
+            )
+        }
+
         // ── Login ──────────────────────────────────────────────────────────────
         composable(Routes.LOGIN) {
             LoginScreen(
@@ -74,7 +86,12 @@ fun MapiNavGraph(sessionManager: SessionManager) {
                         popUpTo(Routes.LOGIN) { inclusive = true }
                     }
                 },
-                onIrAConfig = { navController.navigate(Routes.SETTINGS) }
+                onIrAConfig = { navController.navigate(Routes.SETTINGS) },
+                onNecesitaVincular = {
+                    navController.navigate(Routes.VINCULAR) {
+                        popUpTo(Routes.LOGIN) { inclusive = true }
+                    }
+                }
             )
         }
 

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mapicomandas.SessionManager
 import com.example.mapicomandas.data.ConfigService
+import com.example.mapicomandas.data.api.ApiException
 import com.example.mapicomandas.data.repository.RestauranteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,7 +17,8 @@ data class LoginUiState(
     val password: String = "",
     val cargando: Boolean = false,
     val error: String? = null,
-    val autenticado: Boolean = false
+    val autenticado: Boolean = false,
+    val necesitaVincular: Boolean = false   // token de dispositivo inválido → re-emparejar
 )
 
 @HiltViewModel
@@ -52,6 +54,11 @@ class LoginViewModel @Inject constructor(
                         error = "Usuario o contraseña incorrectos"
                     )
                 }
+            } catch (e: ApiException.Reautenticar) {
+                if (e.motivo == "vincular")
+                    _uiState.value = _uiState.value.copy(cargando = false, necesitaVincular = true)
+                else
+                    _uiState.value = _uiState.value.copy(cargando = false, error = e.message)
             } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(cargando = false, error = e.message)
             }
