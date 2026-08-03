@@ -9,16 +9,6 @@ import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
-data class DbConfig(
-    val host: String = "",
-    val puerto: Int = 1433,
-    val baseDatos: String = "",
-    val usuario: String = "",
-    val password: String = "",
-    val ssl: String = "off",   // jTDS: off | request | require | authenticate
-    val impresoraTicket: String = ""   // IP o IP:puerto de la impresora ESC/POS
-)
-
 data class Sesion(
     val idTienda: Int = 1,
     val idCaja: Int = 1,
@@ -27,9 +17,14 @@ data class Sesion(
     val idMesero: Int = 1,
     val nombreMesero: String = "",
     val cajaHabilitada: Boolean = false,
-    val dbConfig: DbConfig = DbConfig()
+    val impresoraTicket: String = ""   // IP/IP:puerto de la impresora ESC/POS (local a la tablet)
 )
 
+/**
+ * Identidad y ajustes locales. La app se configura SOLO con el código de vinculación
+ * (como las otras apps): NO guarda credenciales SQL — todo el dato viaja por la API central.
+ * Lo único local es la impresora ESC/POS (Bluetooth/red/USB) y el modo comida rápida.
+ */
 @Singleton
 class SessionManager @Inject constructor(
     @ApplicationContext private val context: Context
@@ -39,9 +34,7 @@ class SessionManager @Inject constructor(
         .build()
 
     private val prefs = EncryptedSharedPreferences.create(
-        context,
-        "mapi_session",
-        masterKey,
+        context, "mapi_session", masterKey,
         EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
@@ -57,38 +50,17 @@ class SessionManager @Inject constructor(
         idMesero = prefs.getInt("idMesero", 1),
         nombreMesero = prefs.getString("nombreMesero", "") ?: "",
         cajaHabilitada = prefs.getBoolean("cajaHabilitada", false),
-        dbConfig = DbConfig(
-            host = prefs.getString("dbHost", "") ?: "",
-            puerto = prefs.getInt("dbPuerto", 1433),
-            baseDatos = prefs.getString("dbNombre", "") ?: "",
-            usuario = prefs.getString("dbUsuario", "") ?: "",
-            password = prefs.getString("dbPassword", "") ?: "",
-            ssl = prefs.getString("dbSsl", "off") ?: "off",
-            impresoraTicket = prefs.getString("impresoraTicket", "") ?: ""
-        )
+        impresoraTicket = prefs.getString("impresoraTicket", "") ?: ""
     )
 
-    fun guardarDbConfig(config: DbConfig, idTienda: Int, idCaja: Int, idAlmacen: Int) {
-        prefs.edit()
-            .putString("dbHost", config.host)
-            .putInt("dbPuerto", config.puerto)
-            .putString("dbNombre", config.baseDatos)
-            .putString("dbUsuario", config.usuario)
-            .putString("dbPassword", config.password)
-            .putString("dbSsl", config.ssl)
-            .putString("impresoraTicket", config.impresoraTicket)
-            .putInt("idTienda", idTienda)
-            .putInt("idCaja", idCaja)
-            .putInt("idAlmacen", idAlmacen)
-            .apply()
+    /** Guarda la impresora ESC/POS local. */
+    fun guardarImpresora(impresora: String) {
+        prefs.edit().putString("impresoraTicket", impresora).apply()
         _sesion.value = cargarSesion()
     }
 
     fun setMesero(idMesero: Int, nombre: String) {
-        prefs.edit()
-            .putInt("idMesero", idMesero)
-            .putString("nombreMesero", nombre)
-            .apply()
+        prefs.edit().putInt("idMesero", idMesero).putString("nombreMesero", nombre).apply()
         _sesion.value = _sesion.value.copy(idMesero = idMesero, nombreMesero = nombre)
     }
 
@@ -97,19 +69,11 @@ class SessionManager @Inject constructor(
         _sesion.value = _sesion.value.copy(cajaHabilitada = habilitada)
     }
 
-    fun setUsuario(idUsuario: Int) {
-        prefs.edit().putInt("idUsuario", idUsuario).apply()
-        _sesion.value = _sesion.value.copy(idUsuario = idUsuario)
-    }
-
     private val _nombreUsuario = MutableStateFlow(prefs.getString("nombreUsuario", "") ?: "")
     val nombreUsuario: StateFlow<String> = _nombreUsuario
 
     fun iniciarSesion(idUsuario: Int, nombre: String) {
-        prefs.edit()
-            .putInt("idUsuario", idUsuario)
-            .putString("nombreUsuario", nombre)
-            .apply()
+        prefs.edit().putInt("idUsuario", idUsuario).putString("nombreUsuario", nombre).apply()
         _sesion.value = _sesion.value.copy(idUsuario = idUsuario)
         _nombreUsuario.value = nombre
     }
@@ -121,8 +85,7 @@ class SessionManager @Inject constructor(
 
     val haIniciadoSesion get() = _nombreUsuario.value.isNotBlank()
 
-    // Modo Comida Rápida (REST_COMIDA_RAPIDA): tras cobrar para-llevar no cierra la
-    // ventana de comanda, limpia y abre una nueva venta.
+    // Modo Comida Rápida (REST_COMIDA_RAPIDA)
     private val _fastFood = MutableStateFlow(prefs.getBoolean("fastFood", false))
     val fastFood: StateFlow<Boolean> = _fastFood
     val fastFoodActivo get() = _fastFood.value
@@ -133,9 +96,6 @@ class SessionManager @Inject constructor(
     }
 
     // ── API central (identidad) ───────────────────────────────────────────────
-    // Migración a https://api.mapi.codesi.mx: token de dispositivo (vinculación) + token
-    // de sesión (login, 30 días). Reemplaza host/usuario/password de SQL (se retiran al
-    // completar el swap del repositorio a HTTP en la Fase 2).
     val apiBaseUrl get() = prefs.getString("apiBaseUrl", "https://api.mapi.codesi.mx") ?: "https://api.mapi.codesi.mx"
     val deviceToken get() = prefs.getString("deviceToken", "") ?: ""
     val sessionToken get() = prefs.getString("sessionToken", "") ?: ""
@@ -146,12 +106,12 @@ class SessionManager @Inject constructor(
         prefs.edit().putString("apiBaseUrl", url.trim().trimEnd('/')).apply()
     }
 
-    /** Guarda el token de DISPOSITIVO tras /v1/vincular. */
+    /** Token de DISPOSITIVO tras /v1/vincular. */
     fun guardarVinculacion(token: String, negocio: String) {
         prefs.edit().putString("deviceToken", token).putString("negocio", negocio).apply()
     }
 
-    /** Guarda el token de SESIÓN tras /v1/login. */
+    /** Token de SESIÓN tras /v1/login. */
     fun guardarSesionApi(token: String, idUsuario: Int, nombre: String) {
         prefs.edit()
             .putString("sessionToken", token)
@@ -174,14 +134,13 @@ class SessionManager @Inject constructor(
         _nombreUsuario.value = ""
     }
 
-    val dbConfig get() = _sesion.value.dbConfig
+    // ── accesos ────────────────────────────────────────────────────────────────
     val idTienda get() = _sesion.value.idTienda
     val idCaja get() = _sesion.value.idCaja
     val idAlmacen get() = _sesion.value.idAlmacen
     val idMesero get() = _sesion.value.idMesero
     val idUsuario get() = _sesion.value.idUsuario
     val cajaHabilitada get() = _sesion.value.cajaHabilitada
-    val estaConfigurado get() = _sesion.value.dbConfig.host.isNotBlank()
-    val impresoraTicket get() = _sesion.value.dbConfig.impresoraTicket
+    val impresoraTicket get() = _sesion.value.impresoraTicket
     val nombreUsuarioActual get() = _nombreUsuario.value
 }

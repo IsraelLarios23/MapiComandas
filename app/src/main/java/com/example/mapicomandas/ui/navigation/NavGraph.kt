@@ -56,17 +56,6 @@ fun MapiNavGraph(sessionManager: SessionManager) {
 
     NavHost(navController = navController, startDestination = startDest) {
 
-        // ── Configuración inicial de conexión ──────────────────────────────────
-        composable(Routes.CONFIG) {
-            ConfigScreen(
-                onConectado = {
-                    navController.navigate(Routes.LOGIN) {
-                        popUpTo(Routes.CONFIG) { inclusive = true }
-                    }
-                }
-            )
-        }
-
         // ── Vinculación del dispositivo con la API central ─────────────────────
         composable(Routes.VINCULAR) {
             com.example.mapicomandas.ui.screens.vincular.VinculacionScreen(
@@ -116,10 +105,14 @@ fun MapiNavGraph(sessionManager: SessionManager) {
             )
         }
 
-        // ── Settings (conexión + caja) ─────────────────────────────────────────
+        // ── Ajustes (API + vinculación + impresora + NetPay) ───────────────────
         composable(Routes.SETTINGS) {
             ConfigScreen(
-                onConectado = { navController.popBackStack() },
+                onDesvincular = {
+                    navController.navigate(Routes.VINCULAR) {
+                        popUpTo(Routes.HOME) { inclusive = true }
+                    }
+                },
                 onVolver = { navController.popBackStack() }
             )
         }

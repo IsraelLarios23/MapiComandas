@@ -88,7 +88,7 @@ dependencies {
     kapt("com.squareup:javapoet:1.13.0")
 
     // jTDS Driver para SQL Server (compatible con Android)
-    implementation(libs.jtds)
+    // jTDS eliminado: la app ya no se conecta por SQL directo (todo va por la API central).
 
     // Room — compilador con ksp
     implementation(libs.room.runtime)
