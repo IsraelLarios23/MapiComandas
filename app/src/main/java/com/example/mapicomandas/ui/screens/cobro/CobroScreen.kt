@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -177,21 +178,17 @@ fun CobroScreen(
             return@Scaffold
         }
 
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            // Panel izquierdo: resumen de la comanda
-            Column(
-                modifier = Modifier
-                    .weight(0.5f)
-                    .fillMaxHeight()
-                    .padding(12.dp)
-            ) {
+        val vistaCompacta = com.example.mapicomandas.ui.util.rememberVistaCompacta(viewModel.session)
+
+        // Panel izquierdo: resumen de la comanda (líneas + propina + totales + división)
+        val contenidoResumen: @Composable ColumnScope.() -> Unit = {
                 Text("Resumen", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Spacer(Modifier.height(8.dp))
-                LazyColumn(modifier = Modifier.weight(1f)) {
+                // En teléfono la pestaña completa hace scroll: la lista va acotada
+                LazyColumn(
+                    modifier = if (vistaCompacta) Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 220.dp)
+                    else Modifier.weight(1f)
+                ) {
                     items(
                         uiState.lineas.filter { it.status != StatusLinea.CANCELADO }
                     ) { linea ->
@@ -400,17 +397,10 @@ fun CobroScreen(
                         )
                     }
                 }
-            }
+        }
 
-            Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
-
-            // Panel derecho: formas de pago
-            Column(
-                modifier = Modifier
-                    .weight(0.5f)
-                    .fillMaxHeight()
-                    .padding(12.dp)
-            ) {
+        // Panel derecho: formas de pago
+        val contenidoPago: @Composable ColumnScope.() -> Unit = {
                 Text("Formas de Pago", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Spacer(Modifier.height(8.dp))
 
@@ -567,6 +557,41 @@ fun CobroScreen(
                         Text("COBRAR", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     }
                 }
+        }
+
+        if (vistaCompacta) {
+            // Teléfono: pestañas Cuenta | Pago
+            var tabSel by rememberSaveable { mutableStateOf(0) }
+            Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+                TabRow(selectedTabIndex = tabSel) {
+                    Tab(selected = tabSel == 0, onClick = { tabSel = 0 }, text = { Text("Cuenta") })
+                    Tab(selected = tabSel == 1, onClick = { tabSel = 1 }, text = { Text("Pago") })
+                }
+                if (tabSel == 0) {
+                    Column(
+                        modifier = Modifier.weight(1f).fillMaxWidth()
+                            .verticalScroll(rememberScrollState()).padding(12.dp),
+                        content = contenidoResumen
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier.weight(1f).fillMaxWidth().padding(12.dp),
+                        content = contenidoPago
+                    )
+                }
+            }
+        } else {
+            // Tableta: dos paneles lado a lado
+            Row(modifier = Modifier.fillMaxSize().padding(padding)) {
+                Column(
+                    modifier = Modifier.weight(0.5f).fillMaxHeight().padding(12.dp),
+                    content = contenidoResumen
+                )
+                Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
+                Column(
+                    modifier = Modifier.weight(0.5f).fillMaxHeight().padding(12.dp),
+                    content = contenidoPago
+                )
             }
         }
     }

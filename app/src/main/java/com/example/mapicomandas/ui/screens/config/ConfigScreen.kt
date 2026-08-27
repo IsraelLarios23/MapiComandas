@@ -97,6 +97,17 @@ fun ConfigScreen(
                 Switch(checked = uiState.fastFood, onCheckedChange = viewModel::setFastFood)
                 Spacer(Modifier.width(8.dp)); Text("Modo comida rápida (para llevar)")
             }
+            Text("Vista de la app", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = uiState.modoVista == "auto",
+                    onClick = { viewModel.setModoVista("auto") }, label = { Text("Auto") })
+                FilterChip(selected = uiState.modoVista == "telefono",
+                    onClick = { viewModel.setModoVista("telefono") }, label = { Text("Teléfono") })
+                FilterChip(selected = uiState.modoVista == "tableta",
+                    onClick = { viewModel.setModoVista("tableta") }, label = { Text("Tableta") })
+            }
+            Text("Auto usa el ancho de pantalla (<600 dp = teléfono). En teléfono, Comanda y Cobro se muestran por pestañas.",
+                fontSize = 11.sp, color = Color.Gray)
             OutlinedTextField(
                 value = uiState.propinaGlobal, onValueChange = viewModel::setPropinaGlobal,
                 label = { Text("Propina sugerida (%)") }, placeholder = { Text("10") },

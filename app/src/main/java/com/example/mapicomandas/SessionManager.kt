@@ -85,6 +85,14 @@ class SessionManager @Inject constructor(
 
     val haIniciadoSesion get() = _nombreUsuario.value.isNotBlank()
 
+    // ── Modo de vista: "auto" (por ancho de pantalla) | "telefono" | "tableta" ──
+    private val _modoVista = MutableStateFlow(prefs.getString("modoVista", "auto") ?: "auto")
+    val modoVista: StateFlow<String> = _modoVista
+    fun setModoVista(modo: String) {
+        prefs.edit().putString("modoVista", modo).apply()
+        _modoVista.value = modo
+    }
+
     // Modo Comida Rápida (REST_COMIDA_RAPIDA)
     private val _fastFood = MutableStateFlow(prefs.getBoolean("fastFood", false))
     val fastFood: StateFlow<Boolean> = _fastFood

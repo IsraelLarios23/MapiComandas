@@ -20,6 +20,7 @@ data class ConfigUiState(
     val negocio: String = "",
     val impresoraTicket: String = "",
     val fastFood: Boolean = false,
+    val modoVista: String = "auto",   // auto | telefono | tableta
     val propinaGlobal: String = "",   // % sugerido (REST_PROPINA_GLOBAL, se guarda por API)
     // NetPay (config viaja por la API central; se edita aquí y se guarda con PUT /v1/config)
     val npBaseUrl: String = "https://api-154.api-netpay.com",
@@ -54,7 +55,8 @@ class ConfigViewModel @Inject constructor(
             vinculado = session.estaVinculado,
             negocio = session.negocio,
             impresoraTicket = session.impresoraTicket,
-            fastFood = session.fastFoodActivo
+            fastFood = session.fastFoodActivo,
+            modoVista = session.modoVista.value
         )
     )
     val uiState: StateFlow<ConfigUiState> = _uiState
@@ -119,6 +121,11 @@ class ConfigViewModel @Inject constructor(
     fun setFastFood(v: Boolean) {
         _uiState.value = _uiState.value.copy(fastFood = v)
         session.setFastFood(v)
+    }
+
+    fun setModoVista(v: String) {
+        _uiState.value = _uiState.value.copy(modoVista = v)
+        session.setModoVista(v)
     }
 
     // ── NetPay ──────────────────────────────────────────────────────────────────

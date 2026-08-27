@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -101,17 +102,10 @@ fun ComandaScreen(
             )
         }
     ) { padding ->
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            // Panel izquierdo: catálogo de artículos
-            Column(
-                modifier = Modifier
-                    .weight(0.55f)
-                    .fillMaxHeight()
-            ) {
+        val vistaCompacta = com.example.mapicomandas.ui.util.rememberVistaCompacta(viewModel.session)
+
+        // Panel izquierdo: catálogo de artículos (búsqueda + categorías + grid)
+        val contenidoCatalogo: @Composable ColumnScope.() -> Unit = {
                 // Barra de búsqueda / código
                 Row(
                     modifier = Modifier
@@ -205,20 +199,10 @@ fun ComandaScreen(
                         )
                     }
                 }
-            }
+        }
 
-            Divider(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(1.dp)
-            )
-
-            // Panel derecho: líneas de la comanda + totales + botones
-            Column(
-                modifier = Modifier
-                    .weight(0.45f)
-                    .fillMaxHeight()
-            ) {
+        // Panel derecho: líneas de la comanda + totales + botones
+        val contenidoCuenta: @Composable ColumnScope.() -> Unit = {
                 // Lista de líneas
                 LazyColumn(
                     modifier = Modifier
@@ -273,6 +257,39 @@ fun ComandaScreen(
                     Spacer(Modifier.width(6.dp))
                     Text("COBRAR", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 }
+        }
+
+        if (vistaCompacta) {
+            // Teléfono: pestañas Catálogo | Cuenta
+            var tabSel by rememberSaveable { mutableStateOf(0) }
+            val numLineas = uiState.lineas.count { it.status != StatusLinea.CANCELADO }
+            Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+                TabRow(selectedTabIndex = tabSel) {
+                    Tab(selected = tabSel == 0, onClick = { tabSel = 0 },
+                        text = { Text("Catálogo") })
+                    Tab(selected = tabSel == 1, onClick = { tabSel = 1 },
+                        text = {
+                            Text(buildString {
+                                append("Cuenta")
+                                if (numLineas > 0) append(" ($numLineas)")
+                                uiState.comanda?.let { append(" · $${String.format("%.2f", it.total)}") }
+                            }, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        })
+                }
+                if (tabSel == 0) contenidoCatalogo() else contenidoCuenta()
+            }
+        } else {
+            // Tableta: dos paneles lado a lado
+            Row(modifier = Modifier.fillMaxSize().padding(padding)) {
+                Column(
+                    modifier = Modifier.weight(0.55f).fillMaxHeight(),
+                    content = contenidoCatalogo
+                )
+                Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
+                Column(
+                    modifier = Modifier.weight(0.45f).fillMaxHeight(),
+                    content = contenidoCuenta
+                )
             }
         }
     }
