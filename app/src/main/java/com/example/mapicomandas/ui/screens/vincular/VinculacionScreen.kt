@@ -44,7 +44,7 @@ fun VinculacionScreen(
             Icon(Icons.Default.Link, null, modifier = Modifier.size(56.dp),
                 tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(12.dp))
-            Text("Empareja esta tablet con tu negocio", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("Empareja este dispositivo con tu negocio", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Text(
                 "Genera un código de 8 caracteres en el portal (api.mapi.codesi.mx/admin → tu cliente → Generar código) y captúralo aquí.",
                 fontSize = 13.sp, textAlign = TextAlign.Center, color = androidx.compose.ui.graphics.Color.Gray,
