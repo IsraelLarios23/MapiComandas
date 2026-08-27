@@ -28,11 +28,9 @@ import javax.inject.Singleton
  * en lugar de jTDS/SQL directo. El servidor calcula IEPS, folio e importes y deriva
  * tienda/caja/almacén de dbo.ClienteConfig, así que la app ya NO los manda.
  *
- * Huecos conocidos del contrato actual (marcados con TODO(api)); requieren cambios de servidor:
- *  - MesaDto no trae layout (posX/posY/forma/color/idGrupoMesa) → el plano usa posiciones 0.
- *  - ArticuloDto no trae esKit/esPlatillo → la detección de kit se apoya en obtenerKitSlots.
- *  - No hay endpoint para editar datos de un pedido a domicilio ya abierto.
- *  - GET /v1/cocina no filtra por punto de impresión.
+ * El contrato del servidor (rama central-restaurante-100) ya trae layout de mesas, esKit,
+ * tipoServicio/entrega en la comanda, kitRef y filtro por punto en cocina, ventas por
+ * tienda y config por caja. Hueco restante: editar datos de un pedido a domicilio abierto.
  */
 @Singleton
 class RestauranteRepositoryHttpImpl @Inject constructor(
@@ -72,7 +70,7 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
     override suspend fun obtenerVentasDia(): List<VentaDia> =
         // Shape real DocHistorialDto: {idVenta,folio,hora,cliente,total,saldoPendiente,cancelada}.
         // OJO servidor: filtra por el usuario de la sesión (no toda la tienda).
-        parse<List<VentaDiaDto>>(api.get("/v1/ventas")).map {
+        parse<List<VentaDiaDto>>(api.get("/v1/ventas?ambito=tienda")).map {
             VentaDia(it.idVenta, it.folio, it.hora, it.total, it.cancelada, null)
         }
 
@@ -210,25 +208,9 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
     override suspend fun obtenerDetalle(idComanda: Int): List<LineaComanda> =
         parse<ComandaDto>(api.get("/v1/comandas/$idComanda")).lineas.map { it.toLineaComanda(idComanda) }
 
-    override suspend fun obtenerComanda(idComanda: Int): MaestroComanda {
-        val dto = parse<ComandaDto>(api.get("/v1/comandas/$idComanda"))
-        if (dto.idMesa != null) return dto.toMaestroComanda()
-        // Sin mesa: ComandaDto no trae tipoServicio/entrega → completarlos del hub de domicilio
-        // (arregla fast-food que nunca reabría y los datos de entrega en el cobro).
-        val sinMesa = runCatching { parse<List<ComandaSinMesaDto>>(api.get("/v1/domicilio/comandas")) }
-            .getOrDefault(emptyList()).firstOrNull { it.idComanda == idComanda }
-            ?: return dto.toMaestroComanda()
-        return dto.toMaestroComanda().copy(
-            tipoServicio = sinMesa.tipoServicio,
-            nombreCliente = sinMesa.nombreCliente,
-            telefonoCliente = sinMesa.telefonoCliente,
-            direccionEntrega = sinMesa.direccionEntrega,
-            idRepartidor = sinMesa.idRepartidor,
-            idZonaReparto = sinMesa.idZonaReparto,
-            cargoEntrega = sinMesa.cargoEntrega,
-            statusEntrega = sinMesa.statusEntrega
-        )
-    }
+    override suspend fun obtenerComanda(idComanda: Int): MaestroComanda =
+        // El server ya manda tipoServicio/entrega/observaciones en la comanda (1 llamada).
+        parse<ComandaDto>(api.get("/v1/comandas/$idComanda")).toMaestroComanda()
 
     // ── Operaciones de mesa ────────────────────────────────────────────────────
     override suspend fun cambiarMesero(idComanda: Int, idMeseroNuevo: Int) {
@@ -245,7 +227,7 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
 
     // ── Cocina / KDS ────────────────────────────────────────────────────────────
     override suspend fun contarPlatillosListos(): Int =
-        parse<List<PlatilloKdsDto>>(api.get("/v1/cocina")).count { it.status == StatusLinea.LISTO }
+        parse<List<PlatilloKdsDto>>(api.get("/v1/cocina?soloListos=true")).size
 
     override suspend fun enviarACocina(idComanda: Int) {
         api.post("/v1/comandas/$idComanda/enviar-cocina")
@@ -259,16 +241,17 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
         api.post("/v1/cocina/$idDetalle/entregado")
     }
 
-    // TODO(api): GET /v1/cocina no filtra por punto de impresión → se ignora idPunto.
-    override suspend fun obtenerPlatillosCocina(idPunto: Int?): List<PlatilloKds> =
-        parse<List<PlatilloKdsDto>>(api.get("/v1/cocina")).map {
+    override suspend fun obtenerPlatillosCocina(idPunto: Int?): List<PlatilloKds> {
+        val q = if (idPunto != null && idPunto > 0) "?punto=$idPunto" else ""
+        return parse<List<PlatilloKdsDto>>(api.get("/v1/cocina$q")).map {
             PlatilloKds(
                 idDetalleComanda = it.idDetalle, idComanda = it.idComanda, folio = it.folio,
                 mesa = it.mesa?.toString() ?: "", articulo = it.nombre, cantidad = it.cantidad,
                 notas = it.notas ?: "", status = it.status, fechaEnvio = null, minutos = null,
-                minutosTranscurridos = it.minutosTranscurridos, kitRef = ""
+                minutosTranscurridos = it.minutosTranscurridos, kitRef = it.kitRef ?: ""
             )
         }
+    }
 
     // ── Cobro ──────────────────────────────────────────────────────────────────
     override suspend fun cerrarComanda(
@@ -335,7 +318,8 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
 
     override suspend fun guardarRepartidor(id: Int, nombre: String, tel: String, activo: Boolean): Int {
         val body = buildJsonObject {
-            put("nombre", nombre); put("telefono", tel); if (id > 0) put("idRepartidor", id)
+            put("nombre", nombre); put("telefono", tel); put("activo", activo)
+            if (id > 0) put("idRepartidor", id)
         }
         return api.post("/v1/domicilio/repartidores", body).int("idRepartidor")
     }
@@ -347,7 +331,8 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
 
     override suspend fun guardarZonaReparto(id: Int, nombre: String, cargo: Double, activo: Boolean): Int {
         val body = buildJsonObject {
-            put("nombre", nombre); put("cargo", cargo); if (id > 0) put("idZonaReparto", id)
+            put("nombre", nombre); put("cargo", cargo); put("activo", activo)
+            if (id > 0) put("idZonaReparto", id)
         }
         return api.post("/v1/domicilio/zonas", body).int("idZonaReparto")
     }
@@ -555,25 +540,27 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
         api.put("/v1/config", buildJsonObject { put("clave", clave); put("valor", valor) })
     }
 
-    // TODO(api): PUT /v1/config escribe la clave GLOBAL; no hay escritura por caja vía API.
     override suspend fun guardarConfigScope(clave: String, valor: String, idTienda: Int, idCaja: Int) {
-        guardarConfig(clave, valor)
+        api.put("/v1/config", buildJsonObject {
+            put("clave", clave); put("valor", valor); put("idCaja", idCaja)
+        })
     }
 
     // ── mapeos DTO → dominio ────────────────────────────────────────────────────
     private fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
 
-    // TODO(api): MesaDto no trae layout (posX/posY/ancho/alto/forma/color/idGrupoMesa) ni reservasHoy.
     private fun MesaDto.toMesaUi() = MesaUi(
         idMesa = idMesa, numero = numero.toString(), zona = zona ?: "", capacidad = capacidad, status = status,
-        posX = 0, posY = 0, ancho = 0, alto = 0, forma = 1, color = "", idGrupoMesa = null,
+        posX = posX, posY = posY, ancho = ancho, alto = alto, forma = forma,
+        color = color ?: "", idGrupoMesa = idGrupoMesa,
         idComanda = idComanda, folio = folio, fechaApertura = fechaApertura,
-        importeCuenta = importeCuenta, reservasHoy = 0
+        importeCuenta = importeCuenta, reservasHoy = reservasHoy
     )
 
     private fun MesaDto.toMesa() = Mesa(
         idMesa = idMesa, numero = numero.toString(), zona = zona ?: "", capacidad = capacidad, status = status,
-        posX = 0, posY = 0, ancho = 0, alto = 0, forma = 1, color = "", idGrupoMesa = null, activa = true
+        posX = posX, posY = posY, ancho = ancho, alto = alto, forma = forma,
+        color = color ?: "", idGrupoMesa = idGrupoMesa, activa = true
     )
 
     private fun LineaComandaDto.toLineaComanda(idComanda: Int) = LineaComanda(
@@ -583,21 +570,20 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
         numLugar = numLugar, fechaEnvio = null, fechaListo = null, minutosCocina = null, costoUnitario = 0.0
     )
 
-    // TODO(api): ComandaDto no trae tipoServicio ni datos de domicilio → se asume COMEDOR.
     private fun ComandaDto.toMaestroComanda() = MaestroComanda(
         idComanda = idComanda, folio = folio, idMesa = idMesa, idMesero = idMesero ?: 0, idVenta = null,
         idUsuario = null, idTienda = 0, numPersonas = numPersonas, status = status,
-        fechaApertura = "", fechaCierre = null, observaciones = "", subtotal = subtotal,
-        descuento = descuento, iva = iva, total = total, tipoServicio = TipoServicio.COMEDOR,
-        nombreCliente = null, telefonoCliente = null, direccionEntrega = null, idRepartidor = null,
-        idZonaReparto = null, cargoEntrega = 0.0, statusEntrega = StatusEntrega.NA
+        fechaApertura = fechaApertura ?: "", fechaCierre = null, observaciones = observaciones ?: "",
+        subtotal = subtotal, descuento = descuento, iva = iva, total = total,
+        tipoServicio = tipoServicio,
+        nombreCliente = nombreCliente, telefonoCliente = telefonoCliente,
+        direccionEntrega = direccionEntrega, idRepartidor = null,
+        idZonaReparto = null, cargoEntrega = cargoEntrega, statusEntrega = statusEntrega
     )
 
-    // TODO(api): ArticuloDto no trae esKit/esPlatillo → esKit=false (la detección de kit se
-    // apoya en obtenerKitSlots no vacío). tasaIeps viene como fracción (0.08), no porcentaje.
     private fun ArticuloApiDto.toArticulo() = Articulo(
         idArticulo = idArticulo, clave = clave, nombre = nombre, precioVenta = precioVenta, costo = 0.0,
-        idCategoria = idCategoria ?: 0, codigoBarras = codigoBarras, esPlatillo = true, esKit = false,
+        idCategoria = idCategoria ?: 0, codigoBarras = codigoBarras, esPlatillo = esPlatillo, esKit = esKit,
         esInsumo = false, manejaInventario = manejaInventario, colorBoton = null, idPuntoImpresion = null,
         tasaIEPS = tasaIeps, exento = exento, precioIncluyeImpuesto = precioIncluyeImpuesto,
         iepsTipoFactor = iepsTipoFactor.ifBlank { null }, iepsCuota = 0.0, tasaIva = tasaIva,

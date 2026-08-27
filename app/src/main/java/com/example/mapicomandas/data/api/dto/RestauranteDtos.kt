@@ -20,7 +20,16 @@ data class MesaDto(
     val idComanda: Int? = null,
     val folio: String? = null,
     val fechaApertura: String? = null,
-    val importeCuenta: Double = 0.0
+    val importeCuenta: Double = 0.0,
+    // Layout del editor del POS (el plano se dibuja igual que el desktop)
+    val posX: Int = 0,
+    val posY: Int = 0,
+    val ancho: Int = 0,
+    val alto: Int = 0,
+    val forma: Int = 1,
+    val color: String? = null,
+    val idGrupoMesa: Int? = null,
+    val reservasHoy: Int = 0
 )
 
 @Serializable
@@ -44,7 +53,15 @@ data class ComandaDto(
     val descuento: Double = 0.0,
     val iva: Double = 0.0,
     val total: Double = 0.0,
-    val lineas: List<LineaComandaDto> = emptyList()
+    val lineas: List<LineaComandaDto> = emptyList(),
+    val tipoServicio: Int = 1,
+    val observaciones: String? = null,
+    val fechaApertura: String? = null,
+    val nombreCliente: String? = null,
+    val telefonoCliente: String? = null,
+    val direccionEntrega: String? = null,
+    val cargoEntrega: Double = 0.0,
+    val statusEntrega: Int = 0
 )
 
 @Serializable
@@ -72,7 +89,8 @@ data class PlatilloKdsDto(
     val cantidad: Double = 0.0,
     val notas: String? = null,
     val status: Int = 1,
-    val minutosTranscurridos: Int = 0
+    val minutosTranscurridos: Int = 0,
+    val kitRef: String? = null
 )
 
 @Serializable
@@ -141,7 +159,10 @@ data class ArticuloApiDto(
     val claveProdServSat: String? = null,
     val claveUnidadSat: String? = null,
     val existencia: Double? = null,
-    val precioLista: Double? = null
+    val precioLista: Double? = null,
+    val esKit: Boolean = false,
+    val esPlatillo: Boolean = false,
+    val visibleTouch: Boolean = true
 )
 
 @Serializable

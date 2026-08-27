@@ -87,8 +87,23 @@ fun KdsScreen(
                             "Cambiar tema"
                         )
                     }
-                    // Nota: el filtro por punto de impresión se quitó — GET /v1/cocina no
-                    // filtra por estación (pendiente de servidor). Se muestra todo.
+                    // Filtro por estación (el server rutea por punto del artículo o su categoría)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        item {
+                            FilterChip(
+                                selected = uiState.puntoSeleccionado == null,
+                                onClick = { viewModel.seleccionarPunto(null) },
+                                label = { Text("Todos") }
+                            )
+                        }
+                        items(uiState.puntos) { punto ->
+                            FilterChip(
+                                selected = uiState.puntoSeleccionado == punto.idPuntoImpresion,
+                                onClick = { viewModel.seleccionarPunto(punto.idPuntoImpresion) },
+                                label = { Text(punto.nombre) }
+                            )
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color(0xFF1A237E),
