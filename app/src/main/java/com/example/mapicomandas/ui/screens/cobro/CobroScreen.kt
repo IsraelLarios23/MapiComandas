@@ -55,6 +55,45 @@ fun CobroScreen(
         }
     }
 
+    // Búsqueda/selección de cliente para la venta
+    if (uiState.mostrarBuscarCliente) {
+        var q by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { viewModel.setMostrarBuscarCliente(false) },
+            title = { Text("Cliente de la venta") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = q,
+                        onValueChange = { q = it; viewModel.buscarClientes(it) },
+                        label = { Text("Nombre / clave / RFC") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    if (uiState.buscandoCliente) CircularProgressIndicator(Modifier.size(20.dp))
+                    Column(Modifier.heightIn(max = 260.dp).verticalScroll(rememberScrollState())) {
+                        uiState.clientesEncontrados.forEach { c ->
+                            TextButton(
+                                onClick = { viewModel.seleccionarCliente(c) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("${c.nombre}${if (c.rfc.isNotBlank()) " · ${c.rfc}" else ""}",
+                                    fontSize = 13.sp, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.seleccionarCliente(null) }) { Text("Público general") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.setMostrarBuscarCliente(false) }) { Text("Cerrar") }
+            }
+        )
+    }
+
     // Recuperación por reimpresión de folio cuando la terminal no respondió a tiempo
     uiState.netPayReintentarFolio?.let { folio ->
         AlertDialog(
@@ -232,6 +271,21 @@ fun CobroScreen(
                     FilaTotal("Pagado", uiState.totalPagado, color = Color(0xFF2196F3))
                     if (uiState.cambio > 0) {
                         FilaTotal("Cambio", uiState.cambio, color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    // ── Cliente de la venta (★ como el desktop) ─────────────
+                    OutlinedButton(
+                        onClick = { viewModel.setMostrarBuscarCliente(true) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Star, null, modifier = Modifier.size(16.dp),
+                            tint = if (uiState.clienteSeleccionado != null) Color(0xFFF9A825) else Color.Gray)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            uiState.clienteSeleccionado?.nombre ?: "Cliente (público en general)",
+                            fontSize = 13.sp, maxLines = 1
+                        )
                     }
 
                     Spacer(Modifier.height(12.dp))

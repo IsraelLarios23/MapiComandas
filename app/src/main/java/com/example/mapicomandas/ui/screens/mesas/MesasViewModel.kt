@@ -24,6 +24,7 @@ data class MesasUiState(
     val meseros: List<Mesero> = emptyList(),
     val mesaContextual: MesaUi? = null,
     val platillosListos: Int = 0,
+    val umbralDesatendida: Int = 0,   // REST_MINUTOS_MESA_DESATENDIDA (0 = apagado)
     val cargando: Boolean = false,
     val error: String? = null
 )
@@ -31,6 +32,7 @@ data class MesasUiState(
 @HiltViewModel
 class MesasViewModel @Inject constructor(
     private val repo: RestauranteRepository,
+    private val configService: com.example.mapicomandas.data.ConfigService,
     val session: SessionManager
 ) : ViewModel() {
 
@@ -44,6 +46,16 @@ class MesasViewModel @Inject constructor(
         iniciarPolling()
     }
 
+    /** Reservas de HOY por mesa (Pendiente/Confirmada) para badge y aviso al abrir. */
+    private suspend fun reservasPorMesa(): Map<Int, Int> = runCatching {
+        repo.obtenerReservaciones(java.time.LocalDate.now().toString())
+            .filter { it.status == 1 || it.status == 2 }
+            .groupingBy { it.idMesa }.eachCount()
+    }.getOrDefault(emptyMap())
+
+    private fun List<MesaUi>.conReservas(reservas: Map<Int, Int>) =
+        map { it.copy(reservasHoy = reservas[it.idMesa] ?: 0) }
+
     private fun cargarInicial() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(cargando = true)
@@ -51,8 +63,13 @@ class MesasViewModel @Inject constructor(
                 val zonas = repo.obtenerZonas()
                 val meseros = repo.obtenerMeserosActivos()
                 val mesas = repo.obtenerMesas(_uiState.value.zonaSeleccionada)
+                val reservas = reservasPorMesa()
+                val umbral = runCatching {
+                    configService.numero("REST_MINUTOS_MESA_DESATENDIDA", 0.0).toInt()
+                }.getOrDefault(0)
                 _uiState.value = _uiState.value.copy(
-                    mesas = mesas, zonas = zonas, meseros = meseros, cargando = false, error = null
+                    mesas = mesas.conReservas(reservas), zonas = zonas, meseros = meseros,
+                    umbralDesatendida = umbral, cargando = false, error = null
                 )
             } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(cargando = false, error = e.message)
@@ -64,7 +81,9 @@ class MesasViewModel @Inject constructor(
         pollingJob?.cancel()
         pollingJob = viewModelScope.launch {
             while (isActive) {
-                delay(10_000)
+                // 20 s: cada ciclo son 3 llamadas (mesas + cocina + reservas) ≈ 9 req/min,
+                // holgado contra el límite de 60 req/min por token de la API.
+                delay(20_000)
                 refrescarMesas()
             }
         }
@@ -75,7 +94,10 @@ class MesasViewModel @Inject constructor(
             try {
                 val mesas = repo.obtenerMesas(_uiState.value.zonaSeleccionada)
                 val listos = runCatching { repo.contarPlatillosListos() }.getOrDefault(0)
-                _uiState.value = _uiState.value.copy(mesas = mesas, platillosListos = listos, error = null)
+                val reservas = reservasPorMesa()
+                _uiState.value = _uiState.value.copy(
+                    mesas = mesas.conReservas(reservas), platillosListos = listos, error = null
+                )
             } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }

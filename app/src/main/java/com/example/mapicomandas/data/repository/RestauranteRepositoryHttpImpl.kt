@@ -600,7 +600,8 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
         idCategoria = idCategoria ?: 0, codigoBarras = codigoBarras, esPlatillo = true, esKit = false,
         esInsumo = false, manejaInventario = manejaInventario, colorBoton = null, idPuntoImpresion = null,
         tasaIEPS = tasaIeps, exento = exento, precioIncluyeImpuesto = precioIncluyeImpuesto,
-        iepsTipoFactor = iepsTipoFactor.ifBlank { null }, iepsCuota = 0.0, tasaIva = tasaIva, imagenBase64 = null
+        iepsTipoFactor = iepsTipoFactor.ifBlank { null }, iepsCuota = 0.0, tasaIva = tasaIva,
+        imagenBase64 = null, tieneImagen = tieneImagen
     )
 
     private fun PuntoImpresionDto.toPuntoImpresion() = PuntoImpresion(

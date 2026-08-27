@@ -87,23 +87,8 @@ fun KdsScreen(
                             "Cambiar tema"
                         )
                     }
-                    // Selector de punto de impresión
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        item {
-                            FilterChip(
-                                selected = uiState.puntoSeleccionado == null,
-                                onClick = { viewModel.seleccionarPunto(null) },
-                                label = { Text("Todos") }
-                            )
-                        }
-                        items(uiState.puntos) { punto ->
-                            FilterChip(
-                                selected = uiState.puntoSeleccionado == punto.idPuntoImpresion,
-                                onClick = { viewModel.seleccionarPunto(punto.idPuntoImpresion) },
-                                label = { Text(punto.nombre) }
-                            )
-                        }
-                    }
+                    // Nota: el filtro por punto de impresión se quitó — GET /v1/cocina no
+                    // filtra por estación (pendiente de servidor). Se muestra todo.
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color(0xFF1A237E),

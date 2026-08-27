@@ -54,7 +54,9 @@ class KdsViewModel @Inject constructor(
         pollingJob = viewModelScope.launch {
             while (isActive) {
                 cargarPlatillos()
-                delay(5_000)
+                // 10 s sobre HTTP (antes 5 s por JDBC): 6 req/min contra el límite
+                // de 60 req/min por token; sigue sintiéndose "en vivo" en cocina.
+                delay(10_000)
             }
         }
     }

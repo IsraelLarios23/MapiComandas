@@ -71,6 +71,7 @@ class ComandaViewModel @Inject constructor(
                 val categorias = repo.obtenerCategorias()
                 val articulos = repo.obtenerArticulos()
                 _uiState.value = _uiState.value.copy(categorias = categorias, articulos = articulos)
+                cargarImagenes(articulos)
             } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
@@ -83,6 +84,7 @@ class ComandaViewModel @Inject constructor(
             try {
                 val articulos = repo.obtenerArticulos(idCategoria = idCategoria)
                 _uiState.value = _uiState.value.copy(articulos = articulos)
+                cargarImagenes(articulos)
             } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
@@ -96,6 +98,7 @@ class ComandaViewModel @Inject constructor(
                 try {
                     val articulos = repo.obtenerArticulos(nombre = query)
                     _uiState.value = _uiState.value.copy(articulos = articulos)
+                    cargarImagenes(articulos)
                 } catch (e: Throwable) {
                     _uiState.value = _uiState.value.copy(error = e.message)
                 }
@@ -106,6 +109,13 @@ class ComandaViewModel @Inject constructor(
     fun buscarPorClave(clave: String) {
         viewModelScope.launch {
             try {
+                // 1º resolución EXACTA por código de barras (con oferta/promoción vigente
+                // aplicada por el server), como el lector del desktop; 2º búsqueda por texto.
+                val exacto = runCatching { repo.buscarArticuloPorCodigo(clave.trim()) }.getOrNull()
+                if (exacto != null) {
+                    agregarArticuloRapido(exacto, 1.0)
+                    return@launch
+                }
                 val articulos = repo.obtenerArticulos(clave = clave)
                 if (articulos.size == 1) {
                     agregarArticuloRapido(articulos[0], 1.0)
@@ -121,6 +131,32 @@ class ComandaViewModel @Inject constructor(
     // Cache de detección de kit: la API no trae esKit en el artículo, así que se
     // consulta /articulos/{id}/kit una vez y se recuerda por id.
     private val esKitCache = HashMap<Int, Boolean>()
+
+    // Fotos del catálogo (menú táctil): la API sirve JPEG binario por id; se cachean
+    // en memoria ("" = sin imagen, para no reintentar el 404).
+    private val imagenCache = HashMap<Int, String>()
+
+    private fun cargarImagenes(articulos: List<Articulo>) {
+        val pendientes = articulos.filter {
+            it.tieneImagen && it.imagenBase64 == null && imagenCache[it.idArticulo] != ""
+        }.take(40)
+        if (pendientes.isEmpty()) return
+        viewModelScope.launch {
+            for (art in pendientes) {
+                val b64 = imagenCache[art.idArticulo]?.takeIf { it.isNotEmpty() }
+                    ?: runCatching { repo.obtenerImagenArticulo(art.idArticulo) }.getOrNull()
+                        ?.let { bytes ->
+                            android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                        }.also { imagenCache[art.idArticulo] = it ?: "" }
+                if (b64.isNullOrEmpty()) continue
+                _uiState.value = _uiState.value.copy(
+                    articulos = _uiState.value.articulos.map {
+                        if (it.idArticulo == art.idArticulo) it.copy(imagenBase64 = b64) else it
+                    }
+                )
+            }
+        }
+    }
 
     fun seleccionarArticuloParaAgregar(articulo: Articulo) {
         if (articulo.idArticulo == 0) return

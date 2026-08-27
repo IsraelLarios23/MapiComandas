@@ -41,6 +41,11 @@ data class CobroUiState(
     val mensajeNetPay: String? = null,
     val ultimoNetPay: com.example.mapicomandas.data.netpay.NetPayResultado? = null,
     val netPayReintentarFolio: String? = null,   // no-null → ofrecer reimpresión por folio
+    // Cliente de la venta (crédito/lealtad — "★ Cliente" del desktop)
+    val clienteSeleccionado: com.example.mapicomandas.data.model.ClienteLite? = null,
+    val clientesEncontrados: List<com.example.mapicomandas.data.model.ClienteLite> = emptyList(),
+    val buscandoCliente: Boolean = false,
+    val mostrarBuscarCliente: Boolean = false,
     // División de cuenta
     val modoDivision: ModoDivision = ModoDivision.NINGUNO,
     val partesDivision: Int = 1,
@@ -301,6 +306,26 @@ class CobroViewModel @Inject constructor(
         )
     }
 
+    // ── Cliente de la venta (★ Cliente) ───────────────────────────────────────
+    fun setMostrarBuscarCliente(mostrar: Boolean) {
+        _uiState.value = _uiState.value.copy(mostrarBuscarCliente = mostrar, clientesEncontrados = emptyList())
+    }
+
+    fun buscarClientes(q: String) {
+        if (q.length < 2) return
+        _uiState.value = _uiState.value.copy(buscandoCliente = true)
+        viewModelScope.launch {
+            val res = runCatching { repo.obtenerClientes(q) }.getOrDefault(emptyList())
+            _uiState.value = _uiState.value.copy(clientesEncontrados = res, buscandoCliente = false)
+        }
+    }
+
+    fun seleccionarCliente(cliente: com.example.mapicomandas.data.model.ClienteLite?) {
+        _uiState.value = _uiState.value.copy(
+            clienteSeleccionado = cliente, mostrarBuscarCliente = false, clientesEncontrados = emptyList()
+        )
+    }
+
     fun setPropina(propina: Double) {
         val total = (_uiState.value.comanda?.total ?: 0.0) + propina
         val totalPagado = _uiState.value.totalPagado
@@ -321,7 +346,8 @@ class CobroViewModel @Inject constructor(
                 val idVenta = repo.cerrarComanda(
                     idComanda = idComanda,
                     idFormaPago = primerPago.idFormaPago,
-                    idCliente = 1,
+                    // 0 = público en general; el server exige cliente solo si queda saldo (crédito)
+                    idCliente = state.clienteSeleccionado?.idCliente ?: 0,
                     idUsuario = session.idUsuario,
                     idTienda = session.idTienda,
                     idCaja = session.idCaja,
@@ -342,9 +368,17 @@ class CobroViewModel @Inject constructor(
         }
     }
 
-    private fun construirTicket(idVenta: Int): List<String> {
+    // Encabezado del negocio (empresa/RFC/leyendas), cargado una vez de GET /v1/configuracion
+    private var empresaConfig: com.example.mapicomandas.data.model.EmpresaConfig? = null
+    private suspend fun empresa(): com.example.mapicomandas.data.model.EmpresaConfig =
+        empresaConfig ?: runCatching { repo.obtenerEmpresaConfig() }
+            .getOrDefault(com.example.mapicomandas.data.model.EmpresaConfig())
+            .also { empresaConfig = it }
+
+    private suspend fun construirTicket(idVenta: Int): List<String> {
         val s = _uiState.value
         val comanda = s.comanda
+        val emp = empresa()
         val renglones = s.lineas
             .filter { it.status != StatusLinea.CANCELADO }
             .map { TicketRenglon(it.cantidad, it.nombreArticulo, it.total) }
@@ -355,6 +389,9 @@ class CobroViewModel @Inject constructor(
         val totalConPropina = (comanda?.total ?: 0.0) + s.propinaIngresada
         return TicketFormatter.construir(
             TicketData(
+                empresa = emp.empresa + if (emp.rfc.isNotBlank()) "\nRFC: ${emp.rfc}" else "",
+                header = emp.encabezado,
+                footer = emp.pie,
                 folio = "T-${comanda?.folio ?: idVenta}",
                 fecha = fechaActual(),
                 caja = session.idCaja.toString(),
@@ -368,8 +405,11 @@ class CobroViewModel @Inject constructor(
                 cambio = s.cambio,
                 formaPago = pagoTexto,
                 pagos = ticketPagos,
-                observaciones = if (s.propinaIngresada > 0)
-                    "Propina: $${String.format(java.util.Locale.US, "%,.2f", s.propinaIngresada)}" else ""
+                observaciones = listOfNotNull(
+                    s.clienteSeleccionado?.let { "Cliente: ${it.nombre}" },
+                    if (s.propinaIngresada > 0)
+                        "Propina: $${String.format(java.util.Locale.US, "%,.2f", s.propinaIngresada)}" else null
+                ).joinToString("\n")
             )
         )
     }

@@ -128,7 +128,8 @@ data class Articulo(
     val iepsTipoFactor: String?,
     val iepsCuota: Double,
     val tasaIva: Double = 0.16,
-    val imagenBase64: String? = null
+    val imagenBase64: String? = null,
+    val tieneImagen: Boolean = false   // la API sirve la foto aparte (binario por id)
 )
 
 data class Categoria(

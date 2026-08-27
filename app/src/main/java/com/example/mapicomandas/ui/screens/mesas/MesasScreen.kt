@@ -142,6 +142,7 @@ fun MesasScreen(
                 ) {
                     PlanoMesas(
                         mesas = uiState.mesas,
+                        umbralDesatendida = uiState.umbralDesatendida,
                         onMesaClick = { mesa ->
                             when (mesa.status) {
                                 StatusMesa.LIBRE -> {
@@ -190,6 +191,7 @@ fun MesasScreen(
 @Composable
 fun PlanoMesas(
     mesas: List<MesaUi>,
+    umbralDesatendida: Int = 0,
     onMesaClick: (MesaUi) -> Unit,
     onMesaLongClick: (MesaUi) -> Unit
 ) {
@@ -212,6 +214,7 @@ fun PlanoMesas(
                 mesas.forEach { mesa ->
                     BotonMesa(
                         mesa = mesa,
+                        umbralDesatendida = umbralDesatendida,
                         modifier = Modifier
                             .offset(x = (mesa.posX * escala).dp, y = (mesa.posY * escala).dp)
                             .width((maxOf(mesa.ancho, 70) * escala).dp)
@@ -235,6 +238,7 @@ fun PlanoMesas(
             mesas.forEach { mesa ->
                 BotonMesa(
                     mesa = mesa,
+                    umbralDesatendida = umbralDesatendida,
                     modifier = Modifier.size(96.dp),
                     onClick = { onMesaClick(mesa) },
                     onLongClick = { onMesaLongClick(mesa) }
@@ -249,6 +253,7 @@ fun PlanoMesas(
 fun BotonMesa(
     mesa: MesaUi,
     modifier: Modifier = Modifier,
+    umbralDesatendida: Int = 0,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -256,10 +261,15 @@ fun BotonMesa(
     val colorTexto = if (mesa.status == StatusMesa.LIBRE) Color.Black else Color.White
 
     val minutosOcupada = mesa.fechaApertura?.let { calcularMinutos(it) }
+    // Marco de "mesa desatendida" (REST_MINUTOS_MESA_DESATENDIDA, como el plano del desktop)
+    val desatendida = umbralDesatendida > 0 && mesa.status == StatusMesa.OCUPADA &&
+            (minutosOcupada ?: 0) >= umbralDesatendida
+    val forma = if (mesa.forma == 1) CircleShape else RoundedCornerShape(8.dp)
 
     Card(
         modifier = modifier
-            .clip(if (mesa.forma == 1) CircleShape else RoundedCornerShape(8.dp))
+            .clip(forma)
+            .then(if (desatendida) Modifier.border(3.dp, Color(0xFFD50000), forma) else Modifier)
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = colorFondo),
         elevation = CardDefaults.cardElevation(4.dp)
@@ -352,6 +362,17 @@ fun DialogoAperturaComanda(
         title = { Text("Abrir Mesa ${mesa.numero}") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Aviso de reserva (como el plano del desktop al ocupar mesa reservada)
+                if (mesa.reservasHoy > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Event, null, tint = Color(0xFF9C27B0), modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Esta mesa tiene ${mesa.reservasHoy} reservación(es) HOY — verifica antes de ocuparla.",
+                            color = Color(0xFF9C27B0), fontSize = 13.sp
+                        )
+                    }
+                }
                 ExposedDropdownMenuBox(
                     expanded = expandedMesero,
                     onExpandedChange = { expandedMesero = it }
