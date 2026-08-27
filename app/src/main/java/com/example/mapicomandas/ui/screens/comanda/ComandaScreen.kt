@@ -92,6 +92,22 @@ fun ComandaScreen(
                     IconButton(onClick = onIrHome) {
                         Icon(Icons.Default.Home, "Inicio")
                     }
+                    var menuMas by remember { mutableStateOf(false) }
+                    IconButton(onClick = { menuMas = true }) {
+                        Icon(Icons.Default.MoreVert, "Más acciones")
+                    }
+                    DropdownMenu(expanded = menuMas, onDismissRequest = { menuMas = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Descuento a la cuenta") },
+                            leadingIcon = { Icon(Icons.Default.Percent, null) },
+                            onClick = { menuMas = false; viewModel.abrirDialogoDescuentoCuenta() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Cuenta pedida (Terminar)") },
+                            leadingIcon = { Icon(Icons.Default.ReceiptLong, null) },
+                            onClick = { menuMas = false; viewModel.marcarCuentaPedida() }
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -218,7 +234,8 @@ fun ComandaScreen(
                             linea = linea,
                             seleccionada = uiState.lineaSeleccionada?.idDetalleComanda == linea.idDetalleComanda,
                             onSeleccionar = { viewModel.setLineaSeleccionada(linea) },
-                            onCancelar = { viewModel.cancelarLinea(linea.idDetalleComanda) }
+                            onCancelar = { viewModel.cancelarLinea(linea.idDetalleComanda) },
+                            onMenu = { viewModel.abrirMenuPartida(linea) }
                         )
                     }
                 }
@@ -336,6 +353,77 @@ fun ComandaScreen(
                 }
             },
             onCancelar = { mostrarCancelarComanda = false }
+        )
+    }
+
+    // ── Ajustes de partida y de cuenta (cortesías/descuentos/correcciones) ──
+    uiState.menuPartida?.let { linea ->
+        MenuPartidaDialog(
+            linea = linea,
+            onCortesia = { viewModel.abrirDialogoAjuste(1) },
+            onDescuento = { viewModel.abrirDialogoAjuste(2) },
+            onQuitarAjuste = { viewModel.quitarAjustePartida() },
+            onCorregir = { viewModel.abrirDialogoCorregir() },
+            onDevolver = { viewModel.abrirDialogoDevolver() },
+            onDividir = { viewModel.abrirDialogoDividirPartes() },
+            onTransferir = { viewModel.abrirDialogoTransferir() },
+            onDismiss = { viewModel.cerrarDialogosAjuste() }
+        )
+    }
+    uiState.dialogoAjusteTipo?.let { tipo ->
+        uiState.lineaSeleccionada?.let { linea ->
+            DialogoAjustePartida(
+                tipo = tipo, linea = linea, motivos = uiState.motivosAjuste,
+                onConfirmar = { idMotivo, pct, imp, nota ->
+                    viewModel.aplicarAjustePartida(tipo, idMotivo, pct, imp, nota)
+                },
+                onDismiss = { viewModel.cerrarDialogosAjuste() }
+            )
+        }
+    }
+    if (uiState.dialogoCorregir) uiState.lineaSeleccionada?.let { linea ->
+        DialogoCorregirPartida(
+            linea = linea, motivos = uiState.motivosAjuste,
+            onConfirmar = { cant, precio, idMotivo -> viewModel.corregirPartida(cant, precio, idMotivo) },
+            onDismiss = { viewModel.cerrarDialogosAjuste() }
+        )
+    }
+    if (uiState.dialogoDevolver) uiState.lineaSeleccionada?.let { linea ->
+        DialogoDevolverPartida(
+            linea = linea, motivos = uiState.motivosAjuste,
+            onConfirmar = { idMotivo -> viewModel.devolverPartida(idMotivo) },
+            onDismiss = { viewModel.cerrarDialogosAjuste() }
+        )
+    }
+    if (uiState.dialogoDividirPartes) uiState.lineaSeleccionada?.let { linea ->
+        DialogoDividirPartes(
+            linea = linea,
+            onConfirmar = { partes -> viewModel.dividirPartidaEnPartes(partes) },
+            onDismiss = { viewModel.cerrarDialogosAjuste() }
+        )
+    }
+    if (uiState.dialogoTransferir) {
+        DialogoTransferirMesa(
+            mesas = uiState.mesasTransferir,
+            onConfirmar = { idMesa -> viewModel.transferirPartida(idMesa) },
+            onDismiss = { viewModel.cerrarDialogosAjuste() }
+        )
+    }
+    if (uiState.dialogoDescuentoCuenta) {
+        DialogoDescuentoCuenta(
+            motivos = uiState.motivosAjuste,
+            preview = uiState.descuentoPreview,
+            onPreview = { pct, idMotivo -> viewModel.previewDescuentoCuenta(pct, idMotivo) },
+            onAplicar = { pct, idMotivo -> viewModel.aplicarDescuentoCuenta(pct, idMotivo) },
+            onDismiss = { viewModel.cerrarDialogosAjuste() }
+        )
+    }
+    if (uiState.pideAutorizacion) {
+        com.example.mapicomandas.ui.components.DialogoSupervisor(
+            titulo = "Autorización requerida",
+            mensaje = "El motivo elegido exige autorización de un supervisor.",
+            onConfirmar = { u, p -> viewModel.autorizarAccionPendiente(u, p) },
+            onCancelar = { viewModel.cancelarAutorizacion() }
         )
     }
 }
@@ -459,7 +547,8 @@ fun LineaComandaItem(
     linea: LineaComanda,
     seleccionada: Boolean,
     onSeleccionar: () -> Unit,
-    onCancelar: () -> Unit
+    onCancelar: () -> Unit,
+    onMenu: () -> Unit = {}
 ) {
     val colorFondo = if (seleccionada) MaterialTheme.colorScheme.primaryContainer
     else MaterialTheme.colorScheme.surface
@@ -511,6 +600,12 @@ fun LineaComandaItem(
             fontWeight = FontWeight.Bold,
             fontSize = 13.sp
         )
+        IconButton(
+            onClick = onMenu,
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(Icons.Default.MoreVert, "Ajustes de partida", modifier = Modifier.size(16.dp))
+        }
         IconButton(
             onClick = onCancelar,
             modifier = Modifier.size(32.dp)

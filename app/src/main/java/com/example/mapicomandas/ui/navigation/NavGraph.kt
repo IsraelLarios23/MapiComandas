@@ -36,6 +36,8 @@ object Routes {
     const val REPORTES = "reportes"
     const val VENTAS = "ventas"
     const val RESERVACIONES = "reservaciones"
+    const val PENDIENTES = "pendientes"
+    const val TURNO = "turno"
 
     fun comanda(idComanda: Int) = "comanda/$idComanda"
     fun cobro(idComanda: Int) = "cobro/$idComanda"
@@ -112,6 +114,8 @@ fun MapiNavGraph(sessionManager: SessionManager) {
                 onIrAReportes = { navController.navigate(Routes.REPORTES) },
                 onIrAVentas = { navController.navigate(Routes.VENTAS) },
                 onIrAReservaciones = { navController.navigate(Routes.RESERVACIONES) },
+                onIrAPendientes = { navController.navigate(Routes.PENDIENTES) },
+                onIrATurno = { navController.navigate(Routes.TURNO) },
                 onCerrarSesion = {
                     sessionManager.cerrarSesion()
                     navController.navigate(Routes.LOGIN) {
@@ -219,6 +223,23 @@ fun MapiNavGraph(sessionManager: SessionManager) {
 
         composable(Routes.CAJA) {
             CajaScreen(onVolver = { navController.popBackStack() }, onIrHome = { irHome() })
+        }
+
+        // ── Pagos en caja (cuentas pendientes + bitácora) ──────────────────────
+        composable(Routes.PENDIENTES) {
+            com.example.mapicomandas.ui.screens.pendientes.PendientesScreen(
+                onCobrar = { idComanda -> navController.navigate(Routes.cobro(idComanda)) },
+                onVolver = { navController.popBackStack() },
+                onIrHome = { irHome() }
+            )
+        }
+
+        // ── Turno (cierre, corte mesero, propinas, meseros) ────────────────────
+        composable(Routes.TURNO) {
+            com.example.mapicomandas.ui.screens.turno.TurnoScreen(
+                onVolver = { navController.popBackStack() },
+                onIrHome = { irHome() }
+            )
         }
     }
 }

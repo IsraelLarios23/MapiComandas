@@ -38,6 +38,8 @@ fun HomeScreen(
     onIrAReportes: () -> Unit = {},
     onIrAVentas: () -> Unit = {},
     onIrAReservaciones: () -> Unit = {},
+    onIrAPendientes: () -> Unit = {},
+    onIrATurno: () -> Unit = {},
     onCerrarSesion: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -48,6 +50,8 @@ fun HomeScreen(
         FuncionHome("Cocina (KDS)", Icons.Default.Kitchen, Color(0xFF1A237E), onIrAKds),
         FuncionHome("Domicilio /\nPara Llevar", Icons.Default.DeliveryDining, Color(0xFF0277BD), onIrADomicilio),
         FuncionHome("Caja", Icons.Default.PointOfSale, Color(0xFF37474F), onIrACaja),
+        FuncionHome("Pagos en caja", Icons.Default.Payments, Color(0xFF2E7D32), onIrAPendientes),
+        FuncionHome("Turno", Icons.Default.Schedule, Color(0xFFC62828), onIrATurno),
         FuncionHome("Ventas del día", Icons.Default.ReceiptLong, Color(0xFF455A64), onIrAVentas),
         FuncionHome("Reportes", Icons.Default.BarChart, Color(0xFF00838F), onIrAReportes),
         FuncionHome("Reservaciones", Icons.Default.EventAvailable, Color(0xFF6A1B9A), onIrAReservaciones),

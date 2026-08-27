@@ -27,6 +27,18 @@ data class ComandaUiState(
     val mostrarKitSelector: Boolean = false,
     val mostrarDividir: Boolean = false,
     val mostrarNuevaLinea: Boolean = false,
+    // ── Ajustes de partida y cuenta (cortesías/descuentos, API central) ──
+    val motivosAjuste: List<com.example.mapicomandas.data.api.dto.MotivoAjusteDto> = emptyList(),
+    val menuPartida: LineaComanda? = null,          // línea con el menú ⋮ abierto
+    val dialogoAjusteTipo: Int? = null,             // 1 = cortesía, 2 = descuento
+    val dialogoCorregir: Boolean = false,
+    val dialogoDevolver: Boolean = false,
+    val dialogoDividirPartes: Boolean = false,
+    val dialogoTransferir: Boolean = false,
+    val dialogoDescuentoCuenta: Boolean = false,
+    val mesasTransferir: List<MesaUi> = emptyList(),
+    val descuentoPreview: com.example.mapicomandas.data.api.dto.DescuentoCuentaPreviewDto? = null,
+    val pideAutorizacion: Boolean = false,          // el motivo exige supervisor
     val cargando: Boolean = false,
     val error: String? = null,
     val exito: String? = null
@@ -38,6 +50,7 @@ class ComandaViewModel @Inject constructor(
     val session: SessionManager,
     private val impresionCocina: com.example.mapicomandas.data.ImpresionCocinaService,
     private val printerService: com.example.mapicomandas.util.PrinterService,
+    private val ajustes: com.example.mapicomandas.data.api.AjustesService,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -436,5 +449,244 @@ class ComandaViewModel @Inject constructor(
 
     fun limpiarMensajes() {
         _uiState.value = _uiState.value.copy(error = null, exito = null)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Ajustes de partida y cuenta (cortesía / descuento / corregir / devolver
+    //  / dividir / transferir) — API central, con candado de supervisor cuando
+    //  el motivo lo exige.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /** Acción diferida a que el supervisor autorice (motivo.requiereAutorizacion). */
+    private var accionPendiente: (() -> Unit)? = null
+
+    private suspend fun cargarMotivosSiFaltan() {
+        if (_uiState.value.motivosAjuste.isEmpty()) {
+            val lista = runCatching { ajustes.motivos() }.getOrDefault(emptyList())
+            _uiState.value = _uiState.value.copy(motivosAjuste = lista)
+        }
+    }
+
+    fun abrirMenuPartida(linea: LineaComanda) {
+        _uiState.value = _uiState.value.copy(menuPartida = linea, lineaSeleccionada = linea)
+    }
+
+    fun cerrarDialogosAjuste() {
+        accionPendiente = null
+        _uiState.value = _uiState.value.copy(
+            menuPartida = null, dialogoAjusteTipo = null, dialogoCorregir = false,
+            dialogoDevolver = false, dialogoDividirPartes = false, dialogoTransferir = false,
+            dialogoDescuentoCuenta = false, descuentoPreview = null, pideAutorizacion = false
+        )
+    }
+
+    fun abrirDialogoAjuste(tipo: Int) {
+        viewModelScope.launch {
+            cargarMotivosSiFaltan()
+            _uiState.value = _uiState.value.copy(menuPartida = null, dialogoAjusteTipo = tipo)
+        }
+    }
+
+    fun abrirDialogoCorregir() {
+        viewModelScope.launch {
+            cargarMotivosSiFaltan()
+            _uiState.value = _uiState.value.copy(menuPartida = null, dialogoCorregir = true)
+        }
+    }
+
+    fun abrirDialogoDevolver() {
+        viewModelScope.launch {
+            cargarMotivosSiFaltan()
+            _uiState.value = _uiState.value.copy(menuPartida = null, dialogoDevolver = true)
+        }
+    }
+
+    fun abrirDialogoDividirPartes() {
+        _uiState.value = _uiState.value.copy(menuPartida = null, dialogoDividirPartes = true)
+    }
+
+    fun abrirDialogoTransferir() {
+        viewModelScope.launch {
+            val mesas = runCatching { repo.obtenerMesas(null) }.getOrDefault(emptyList())
+                .filter { it.idMesa != _uiState.value.comanda?.idMesa }
+            _uiState.value = _uiState.value.copy(menuPartida = null, dialogoTransferir = true,
+                mesasTransferir = mesas)
+        }
+    }
+
+    fun abrirDialogoDescuentoCuenta() {
+        viewModelScope.launch {
+            cargarMotivosSiFaltan()
+            _uiState.value = _uiState.value.copy(dialogoDescuentoCuenta = true, descuentoPreview = null)
+        }
+    }
+
+    /** Corre [accion] directo, o la deja pendiente de supervisor si el motivo lo exige. */
+    private fun conCandado(idMotivo: Int, accion: () -> Unit) {
+        val motivo = _uiState.value.motivosAjuste.find { it.idMotivo == idMotivo }
+        if (motivo?.requiereAutorizacion == true) {
+            accionPendiente = accion
+            _uiState.value = _uiState.value.copy(pideAutorizacion = true)
+        } else accion()
+    }
+
+    /** El supervisor tecleó sus credenciales para la acción pendiente. */
+    fun autorizarAccionPendiente(usuario: String, password: String) {
+        viewModelScope.launch {
+            try {
+                if (!repo.autorizarSupervisor(usuario, password)) {
+                    _uiState.value = _uiState.value.copy(error = "Autorización inválida")
+                    return@launch
+                }
+                _uiState.value = _uiState.value.copy(pideAutorizacion = false)
+                accionPendiente?.invoke()
+                accionPendiente = null
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    fun cancelarAutorizacion() {
+        accionPendiente = null
+        _uiState.value = _uiState.value.copy(pideAutorizacion = false)
+    }
+
+    fun aplicarAjustePartida(tipo: Int, idMotivo: Int, porcentaje: Double?, importe: Double?, nota: String?) {
+        val linea = _uiState.value.lineaSeleccionada ?: return
+        conCandado(idMotivo) {
+            viewModelScope.launch {
+                try {
+                    val r = ajustes.aplicarAjuste(linea.idDetalleComanda, tipo, idMotivo, porcentaje, importe, nota)
+                    cerrarDialogosAjuste()
+                    cargarComanda()
+                    _uiState.value = _uiState.value.copy(
+                        exito = r.aviso.ifBlank { if (tipo == 1) "Cortesía aplicada" else "Descuento aplicado" }
+                    )
+                } catch (e: Throwable) {
+                    _uiState.value = _uiState.value.copy(error = e.message)
+                }
+            }
+        }
+    }
+
+    fun quitarAjustePartida() {
+        val linea = _uiState.value.menuPartida ?: _uiState.value.lineaSeleccionada ?: return
+        viewModelScope.launch {
+            try {
+                ajustes.quitarAjuste(linea.idDetalleComanda)
+                cerrarDialogosAjuste()
+                cargarComanda()
+                _uiState.value = _uiState.value.copy(exito = "Ajuste retirado")
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    fun corregirPartida(cantidad: Double?, precio: Double?, idMotivo: Int) {
+        val linea = _uiState.value.lineaSeleccionada ?: return
+        conCandado(idMotivo) {
+            viewModelScope.launch {
+                try {
+                    ajustes.corregirPartida(linea.idDetalleComanda, cantidad, precio, idMotivo)
+                    cerrarDialogosAjuste()
+                    cargarComanda()
+                    _uiState.value = _uiState.value.copy(exito = "Partida corregida")
+                } catch (e: Throwable) {
+                    _uiState.value = _uiState.value.copy(error = e.message)
+                }
+            }
+        }
+    }
+
+    fun devolverPartida(idMotivo: Int) {
+        val linea = _uiState.value.lineaSeleccionada ?: return
+        conCandado(idMotivo) {
+            viewModelScope.launch {
+                try {
+                    ajustes.devolverPartida(linea.idDetalleComanda, idMotivo)
+                    cerrarDialogosAjuste()
+                    cargarComanda()
+                    _uiState.value = _uiState.value.copy(exito = "Partida devuelta (merma registrada)")
+                } catch (e: Throwable) {
+                    _uiState.value = _uiState.value.copy(error = e.message)
+                }
+            }
+        }
+    }
+
+    fun dividirPartidaEnPartes(partes: Int) {
+        val linea = _uiState.value.lineaSeleccionada ?: return
+        viewModelScope.launch {
+            try {
+                val r = ajustes.dividirPartida(linea.idDetalleComanda, partes)
+                cerrarDialogosAjuste()
+                cargarComanda()
+                _uiState.value = _uiState.value.copy(exito = "Partida dividida en ${r.partes}")
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    fun transferirPartida(idMesaDestino: Int) {
+        val linea = _uiState.value.lineaSeleccionada ?: return
+        viewModelScope.launch {
+            try {
+                val r = ajustes.transferirPartidas(listOf(linea.idDetalleComanda), idMesaDestino)
+                cerrarDialogosAjuste()
+                cargarComanda()
+                _uiState.value = _uiState.value.copy(
+                    exito = "Movida a ${r.folioDestino} (mesa $idMesaDestino)"
+                )
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    fun previewDescuentoCuenta(porcentaje: Double, idMotivo: Int) {
+        viewModelScope.launch {
+            try {
+                val p = ajustes.descuentoPreview(idComanda, porcentaje, idMotivo)
+                _uiState.value = _uiState.value.copy(descuentoPreview = p)
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    fun aplicarDescuentoCuenta(porcentaje: Double, idMotivo: Int) {
+        conCandado(idMotivo) {
+            viewModelScope.launch {
+                try {
+                    val r = ajustes.aplicarDescuentoCuenta(idComanda, porcentaje, idMotivo)
+                    cerrarDialogosAjuste()
+                    cargarComanda()
+                    _uiState.value = _uiState.value.copy(
+                        exito = "Descuento del ${porcentaje}% aplicado (−$${String.format(java.util.Locale.US, "%.2f", r.importeDescuento)})"
+                    )
+                } catch (e: Throwable) {
+                    _uiState.value = _uiState.value.copy(error = e.message)
+                }
+            }
+        }
+    }
+
+    /** "Terminar" del desktop: la mesa pasa a Cuenta Pedida (4) y ya no admite capturas. */
+    fun marcarCuentaPedida() {
+        val idMesa = _uiState.value.comanda?.idMesa ?: run {
+            _uiState.value = _uiState.value.copy(error = "La comanda no tiene mesa")
+            return
+        }
+        viewModelScope.launch {
+            try {
+                ajustes.cambiarStatusMesa(idMesa, 4)
+                _uiState.value = _uiState.value.copy(exito = "Cuenta pedida — mesa bloqueada para capturar")
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
     }
 }
