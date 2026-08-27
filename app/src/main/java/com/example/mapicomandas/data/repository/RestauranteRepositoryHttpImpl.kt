@@ -56,15 +56,20 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
     // La API central no expone un catálogo de usuarios (identidad va por login).
     override suspend fun obtenerUsuarios(): List<Usuario> = emptyList()
 
-    // LIMITACIÓN CONOCIDA: "autorización de supervisor" = un login cualquiera (igual que el
-    // POS de escritorio). Cualquier usuario ACTIVO puede autorizar una cancelación.
-    // TODO(api): cuando la central exponga un permiso/rol de supervisor, exigirlo aquí.
-    override suspend fun autorizarSupervisor(usuario: String, password: String): Boolean =
-        runCatching {
-            val body = buildJsonObject { put("usuario", usuario.trim()); put("password", password) }
-            api.post("/v1/login", body, AuthMode.DEVICE)   // valida credenciales; el token emitido se descarta
-            true
-        }.getOrDefault(false)
+    // Autorización REAL de supervisor: POST /v1/autorizar valida credenciales con el
+    // PBKDF2 del POS y exige rol Supervisor/Administrador (si el esquema tiene roles).
+    // No emite tokens. Un fallo de red se propaga (no se reporta como "credenciales malas").
+    override suspend fun autorizarSupervisor(usuario: String, password: String): Boolean {
+        val body = buildJsonObject { put("usuario", usuario.trim()); put("password", password) }
+        return try {
+            val datos = api.post("/v1/autorizar", body).jsonObject
+            val autorizado = datos["autorizado"]?.jsonPrimitive?.contentOrNull == "true"
+            val esSupervisor = datos["esSupervisor"]?.jsonPrimitive?.contentOrNull != "false"
+            autorizado && esSupervisor
+        } catch (e: ApiException.Negocio) {
+            false   // credenciales inválidas / usuario inactivo
+        }
+    }
 
     // ── Ventas ──────────────────────────────────────────────────────────────────
     override suspend fun obtenerVentasDia(): List<VentaDia> =
