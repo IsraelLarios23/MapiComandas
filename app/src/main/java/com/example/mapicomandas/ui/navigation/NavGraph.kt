@@ -38,6 +38,10 @@ object Routes {
     const val RESERVACIONES = "reservaciones"
     const val PENDIENTES = "pendientes"
     const val TURNO = "turno"
+    const val DISPONIBILIDAD = "disponibilidad"
+    const val MERMAS = "mermas"
+    const val MONEDEROS = "monederos"
+    const val HABITACIONES = "habitaciones"
 
     fun comanda(idComanda: Int) = "comanda/$idComanda"
     fun cobro(idComanda: Int) = "cobro/$idComanda"
@@ -116,6 +120,10 @@ fun MapiNavGraph(sessionManager: SessionManager) {
                 onIrAReservaciones = { navController.navigate(Routes.RESERVACIONES) },
                 onIrAPendientes = { navController.navigate(Routes.PENDIENTES) },
                 onIrATurno = { navController.navigate(Routes.TURNO) },
+                onIrADisponibilidad = { navController.navigate(Routes.DISPONIBILIDAD) },
+                onIrAMermas = { navController.navigate(Routes.MERMAS) },
+                onIrAMonederos = { navController.navigate(Routes.MONEDEROS) },
+                onIrAHabitaciones = { navController.navigate(Routes.HABITACIONES) },
                 onCerrarSesion = {
                     sessionManager.cerrarSesion()
                     navController.navigate(Routes.LOGIN) {
@@ -234,9 +242,35 @@ fun MapiNavGraph(sessionManager: SessionManager) {
             )
         }
 
-        // ── Turno (cierre, corte mesero, propinas, meseros) ────────────────────
+        // ── Turno (cierre, corte mesero, propinas, meseros, comisiones) ────────
         composable(Routes.TURNO) {
             com.example.mapicomandas.ui.screens.turno.TurnoScreen(
+                onVolver = { navController.popBackStack() },
+                onIrHome = { irHome() }
+            )
+        }
+
+        // ── P4: disponibilidad, mermas, monederos, habitaciones ────────────────
+        composable(Routes.DISPONIBILIDAD) {
+            com.example.mapicomandas.ui.screens.disponibilidad.DisponibilidadScreen(
+                onVolver = { navController.popBackStack() },
+                onIrHome = { irHome() }
+            )
+        }
+        composable(Routes.MERMAS) {
+            com.example.mapicomandas.ui.screens.mermas.MermasScreen(
+                onVolver = { navController.popBackStack() },
+                onIrHome = { irHome() }
+            )
+        }
+        composable(Routes.MONEDEROS) {
+            com.example.mapicomandas.ui.screens.monederos.MonederosScreen(
+                onVolver = { navController.popBackStack() },
+                onIrHome = { irHome() }
+            )
+        }
+        composable(Routes.HABITACIONES) {
+            com.example.mapicomandas.ui.screens.habitaciones.HabitacionesScreen(
                 onVolver = { navController.popBackStack() },
                 onIrHome = { irHome() }
             )

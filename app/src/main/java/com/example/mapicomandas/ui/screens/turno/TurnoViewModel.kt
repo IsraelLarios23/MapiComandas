@@ -28,6 +28,10 @@ data class TurnoUiState(
     // Meseros (alta/edición)
     val meseroEnEdicion: Mesero? = null,
     val mostrarNuevoMesero: Boolean = false,
+    // Comisiones (P4)
+    val reglasComision: List<com.example.mapicomandas.data.api.dto.ReglaComisionDto> = emptyList(),
+    val reporteComisiones: List<com.example.mapicomandas.data.api.dto.ComisionMeseroDto> = emptyList(),
+    val mostrarNuevaRegla: Boolean = false,
     val cargando: Boolean = false,
     val error: String? = null,
     val exito: String? = null
@@ -37,7 +41,8 @@ data class TurnoUiState(
 @HiltViewModel
 class TurnoViewModel @Inject constructor(
     private val turno: TurnoService,
-    private val repo: RestauranteRepository
+    private val repo: RestauranteRepository,
+    private val catalogos: com.example.mapicomandas.data.api.CatalogosService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TurnoUiState())
@@ -170,6 +175,48 @@ class TurnoViewModel @Inject constructor(
                     mostrarNuevoMesero = false, meseroEnEdicion = null, exito = "Mesero guardado"
                 )
                 cargarMeseros()
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    // ── Comisiones ──────────────────────────────────────────────────────────
+    fun cargarComisiones() {
+        viewModelScope.launch {
+            val reglas = runCatching { catalogos.reglasComision() }.getOrDefault(emptyList())
+            val reporte = runCatching { catalogos.reporteComisiones() }.getOrDefault(emptyList())
+            _uiState.value = _uiState.value.copy(reglasComision = reglas, reporteComisiones = reporte)
+        }
+    }
+
+    fun setMostrarNuevaRegla(v: Boolean) {
+        _uiState.value = _uiState.value.copy(mostrarNuevaRegla = v)
+    }
+
+    fun guardarReglaComision(
+        nombre: String, ambito: Int, baseCalculo: Int, valor: Double, idMesero: Int?
+    ) {
+        viewModelScope.launch {
+            try {
+                catalogos.guardarReglaComision(nombre, ambito, baseCalculo, valor, idMesero = idMesero)
+                _uiState.value = _uiState.value.copy(mostrarNuevaRegla = false, exito = "Regla guardada")
+                cargarComisiones()
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    fun desactivarReglaComision(r: com.example.mapicomandas.data.api.dto.ReglaComisionDto) {
+        viewModelScope.launch {
+            try {
+                catalogos.guardarReglaComision(
+                    r.nombre, r.ambito, r.baseCalculo, r.valor,
+                    idReferencia = r.idReferencia, idReglaComision = r.idReglaComision,
+                    idMesero = r.idMesero, activo = false
+                )
+                cargarComisiones()
             } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }

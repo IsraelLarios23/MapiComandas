@@ -46,7 +46,10 @@ fun TurnoScreen(
             viewModel.limpiarMensajes()
         }
     }
-    LaunchedEffect(tab) { if (tab == 2) viewModel.cargarReglas() }
+    LaunchedEffect(tab) {
+        if (tab == 2) viewModel.cargarReglas()
+        if (tab == 4) viewModel.cargarComisiones()
+    }
 
     Scaffold(
         topBar = {
@@ -72,12 +75,14 @@ fun TurnoScreen(
                 Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Corte mesero") })
                 Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Propinas") })
                 Tab(selected = tab == 3, onClick = { tab = 3 }, text = { Text("Meseros") })
+                Tab(selected = tab == 4, onClick = { tab = 4 }, text = { Text("Comisiones") })
             }
             when (tab) {
                 0 -> TabCierre(uiState, viewModel)
                 1 -> TabCorteMesero(uiState, viewModel)
                 2 -> TabPropinas(uiState, viewModel)
                 3 -> TabMeseros(uiState, viewModel)
+                4 -> TabComisiones(uiState, viewModel)
             }
         }
     }
@@ -93,6 +98,15 @@ fun TurnoScreen(
             mesero = uiState.meseroEnEdicion,
             onGuardar = { id, nombre, pin, activo -> viewModel.guardarMesero(id, nombre, pin, activo) },
             onDismiss = { viewModel.setMostrarNuevoMesero(false) }
+        )
+    }
+    if (uiState.mostrarNuevaRegla) {
+        DialogoReglaComision(
+            meseros = uiState.meseros,
+            onGuardar = { nombre, ambito, base, valor, idMesero ->
+                viewModel.guardarReglaComision(nombre, ambito, base, valor, idMesero)
+            },
+            onDismiss = { viewModel.setMostrarNuevaRegla(false) }
         )
     }
 }
@@ -368,6 +382,129 @@ private fun DialogoMesero(
             Button(
                 onClick = { onGuardar(mesero?.idMesero, nombre.trim(), pin.ifBlank { null }, activo) },
                 enabled = nombre.isNotBlank()
+            ) { Text("Guardar") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
+}
+
+// ── Pestaña 5: comisiones (reglas + reporte del día) ────────────────────────
+private val NOMBRES_AMBITO = mapOf(1 to "Global", 2 to "Familia", 3 to "Categoría", 4 to "Artículo")
+private val NOMBRES_BASE = mapOf(1 to "% importe", 2 to "% utilidad", 3 to "$/unidad")
+
+@Composable
+private fun TabComisiones(uiState: TurnoUiState, viewModel: TurnoViewModel) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Reglas de comisión", fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                modifier = Modifier.weight(1f))
+            Button(onClick = { viewModel.setMostrarNuevaRegla(true) }) {
+                Icon(Icons.Default.Add, null, Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp)); Text("Nueva", fontSize = 12.sp)
+            }
+        }
+        val activas = uiState.reglasComision.filter { it.activo }
+        if (activas.isEmpty())
+            Text("Sin reglas activas — no se devengan comisiones.", fontSize = 12.sp, color = Color.Gray)
+        activas.forEach { r ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(r.nombre, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                    Text(
+                        listOfNotNull(
+                            NOMBRES_AMBITO[r.ambito],
+                            r.referencia?.takeIf { it.isNotBlank() },
+                            NOMBRES_BASE[r.baseCalculo],
+                            r.idMesero?.let { id ->
+                                uiState.meseros.find { it.idMesero == id }?.nombre ?: "mesero $id"
+                            } ?: "todos los meseros"
+                        ).joinToString("  ·  "),
+                        fontSize = 11.sp, color = Color.Gray
+                    )
+                }
+                Text(
+                    if (r.baseCalculo == 3) dinero(r.valor) else "${r.valor}%",
+                    fontWeight = FontWeight.Bold, fontSize = 13.sp
+                )
+                IconButton(onClick = { viewModel.desactivarReglaComision(r) }, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Close, "Desactivar", tint = Color(0xFFC62828), modifier = Modifier.size(16.dp))
+                }
+            }
+            Divider()
+        }
+
+        Spacer(Modifier.height(4.dp))
+        Text("Comisiones del día", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        if (uiState.reporteComisiones.isEmpty())
+            Text("Sin comisiones devengadas hoy.", fontSize = 12.sp, color = Color.Gray)
+        uiState.reporteComisiones.forEach { c ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("${c.nombre} (${c.documentos} docs · base ${dinero(c.base)})",
+                    fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text(dinero(c.comision), fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                    color = Color(0xFF2E7D32))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DialogoReglaComision(
+    meseros: List<Mesero>,
+    onGuardar: (nombre: String, ambito: Int, baseCalculo: Int, valor: Double, idMesero: Int?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var nombre by remember { mutableStateOf("") }
+    var ambito by remember { mutableStateOf(1) }
+    var base by remember { mutableStateOf(1) }
+    var valor by remember { mutableStateOf("") }
+    var idMesero by remember { mutableStateOf<Int?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nueva regla de comisión") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = nombre, onValueChange = { nombre = it },
+                    label = { Text("Nombre") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text("Base de cálculo:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    NOMBRES_BASE.forEach { (k, v) ->
+                        FilterChip(selected = base == k, onClick = { base = k },
+                            label = { Text(v, fontSize = 11.sp) })
+                    }
+                }
+                OutlinedTextField(
+                    value = valor, onValueChange = { valor = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text(if (base == 3) "Monto por unidad" else "Porcentaje") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                Text("Mesero (vacío = todos):", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Column(Modifier.heightIn(max = 150.dp).verticalScroll(rememberScrollState())) {
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().clickable { idMesero = null }) {
+                        RadioButton(selected = idMesero == null, onClick = { idMesero = null })
+                        Text("Todos", fontSize = 13.sp)
+                    }
+                    meseros.filter { it.activo }.forEach { m ->
+                        Row(verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().clickable { idMesero = m.idMesero }) {
+                            RadioButton(selected = idMesero == m.idMesero, onClick = { idMesero = m.idMesero })
+                            Text(m.nombre, fontSize = 13.sp)
+                        }
+                    }
+                }
+                Text("Ámbito global: aplica a toda la venta. El devengo se asienta al cobrar.",
+                    fontSize = 11.sp, color = Color.Gray)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { valor.toDoubleOrNull()?.let { onGuardar(nombre.trim(), ambito, base, it, idMesero) } },
+                enabled = nombre.isNotBlank() && valor.toDoubleOrNull() != null
             ) { Text("Guardar") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }

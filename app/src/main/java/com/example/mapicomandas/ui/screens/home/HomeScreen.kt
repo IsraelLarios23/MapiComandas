@@ -40,6 +40,10 @@ fun HomeScreen(
     onIrAReservaciones: () -> Unit = {},
     onIrAPendientes: () -> Unit = {},
     onIrATurno: () -> Unit = {},
+    onIrADisponibilidad: () -> Unit = {},
+    onIrAMermas: () -> Unit = {},
+    onIrAMonederos: () -> Unit = {},
+    onIrAHabitaciones: () -> Unit = {},
     onCerrarSesion: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -52,6 +56,10 @@ fun HomeScreen(
         FuncionHome("Caja", Icons.Default.PointOfSale, Color(0xFF37474F), onIrACaja),
         FuncionHome("Pagos en caja", Icons.Default.Payments, Color(0xFF2E7D32), onIrAPendientes),
         FuncionHome("Turno", Icons.Default.Schedule, Color(0xFFC62828), onIrATurno),
+        FuncionHome("Disponibilidad", Icons.Default.Inventory, Color(0xFF827717), onIrADisponibilidad),
+        FuncionHome("Mermas", Icons.Default.DeleteSweep, Color(0xFFB71C1C), onIrAMermas),
+        FuncionHome("Monederos", Icons.Default.CardMembership, Color(0xFF6A1B9A), onIrAMonederos),
+        FuncionHome("Habitaciones", Icons.Default.Hotel, Color(0xFF00695C), onIrAHabitaciones),
         FuncionHome("Ventas del día", Icons.Default.ReceiptLong, Color(0xFF455A64), onIrAVentas),
         FuncionHome("Reportes", Icons.Default.BarChart, Color(0xFF00838F), onIrAReportes),
         FuncionHome("Reservaciones", Icons.Default.EventAvailable, Color(0xFF6A1B9A), onIrAReservaciones),

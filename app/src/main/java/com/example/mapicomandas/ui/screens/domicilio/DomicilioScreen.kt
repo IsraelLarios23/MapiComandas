@@ -66,6 +66,9 @@ fun DomicilioScreen(
                     IconButton(onClick = { viewModel.setMostrarEditarZonas(true) }) {
                         Icon(Icons.Default.Map, "Zonas")
                     }
+                    IconButton(onClick = { viewModel.abrirDialogoPlataforma() }) {
+                        Icon(Icons.Default.TwoWheeler, "Pedido de plataforma")
+                    }
                     IconButton(onClick = { viewModel.setMostrarNuevoPedido(true) }) {
                         Icon(Icons.Default.Add, "Nuevo pedido")
                     }
@@ -113,6 +116,20 @@ fun DomicilioScreen(
                 )
             }
         }
+    }
+
+    // Pedido de plataforma delivery (Uber/Didi/Rappi… — folio K, TipoServicio 4)
+    if (uiState.mostrarPlataforma) {
+        DialogoPedidoPlataforma(
+            plataformas = uiState.plataformas,
+            onCrearPlataforma = { nombre, pct -> viewModel.crearPlataforma(nombre, pct) },
+            onConfirmar = { idPlat, ref, cli, obs ->
+                viewModel.abrirPorPlataforma(idPlat, ref, cli, obs) { idComanda ->
+                    onAbrirComanda(idComanda)
+                }
+            },
+            onDismiss = { viewModel.cerrarDialogoPlataforma() }
+        )
     }
 
     // Diálogo con el link de pago generado (compartir / copiar)
@@ -376,6 +393,79 @@ fun DialogoNuevoPedido(
             Button(onClick = {
                 onConfirmar(tipoServicio, cliente, tel, dir, repartidorSel, zonaSel, cargoZona)
             }) { Text("Crear pedido") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
+}
+
+/** Alta de pedido de plataforma: elige la plataforma, referencia del pedido y cliente. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun DialogoPedidoPlataforma(
+    plataformas: List<com.example.mapicomandas.data.api.dto.PlataformaDto>,
+    onCrearPlataforma: (nombre: String, comisionPct: Double) -> Unit,
+    onConfirmar: (idPlataforma: Int, referencia: String, cliente: String, observaciones: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var idPlat by remember(plataformas) { mutableStateOf(plataformas.firstOrNull()?.idPlataforma ?: 0) }
+    var referencia by remember { mutableStateOf("") }
+    var cliente by remember { mutableStateOf("") }
+    var obs by remember { mutableStateOf("") }
+    var nuevaNombre by remember { mutableStateOf("") }
+    var nuevaPct by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Pedido de plataforma") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (plataformas.isEmpty()) {
+                    Text("No hay plataformas dadas de alta. Crea la primera:",
+                        fontSize = 13.sp, color = Color.Gray)
+                } else {
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        plataformas.forEach { pl ->
+                            FilterChip(
+                                selected = idPlat == pl.idPlataforma,
+                                onClick = { idPlat = pl.idPlataforma },
+                                label = { Text(pl.nombre + if (pl.comisionPct > 0) " (${pl.comisionPct}%)" else "") }
+                            )
+                        }
+                    }
+                    OutlinedTextField(value = referencia, onValueChange = { referencia = it },
+                        label = { Text("No. de pedido / referencia") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = cliente, onValueChange = { cliente = it },
+                        label = { Text("Cliente (opcional)") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = obs, onValueChange = { obs = it },
+                        label = { Text("Observaciones") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth())
+                    Divider()
+                }
+                Text("Nueva plataforma", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedTextField(value = nuevaNombre, onValueChange = { nuevaNombre = it },
+                        label = { Text("Nombre") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedTextField(value = nuevaPct,
+                        onValueChange = { nuevaPct = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("% com.") }, singleLine = true, modifier = Modifier.width(90.dp))
+                    IconButton(
+                        onClick = {
+                            if (nuevaNombre.isNotBlank()) {
+                                onCrearPlataforma(nuevaNombre.trim(), nuevaPct.toDoubleOrNull() ?: 0.0)
+                                nuevaNombre = ""; nuevaPct = ""
+                            }
+                        }
+                    ) { Icon(Icons.Default.AddCircle, "Crear plataforma", tint = Color(0xFF0277BD)) }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { if (idPlat > 0) onConfirmar(idPlat, referencia, cliente, obs) },
+                enabled = idPlat > 0) { Text("Abrir pedido") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
     )

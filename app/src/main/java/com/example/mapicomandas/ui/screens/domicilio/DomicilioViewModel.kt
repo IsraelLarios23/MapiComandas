@@ -22,6 +22,9 @@ data class DomicilioUiState(
     val mostrarNuevoPedido: Boolean = false,
     val mostrarEditarRepartidores: Boolean = false,
     val mostrarEditarZonas: Boolean = false,
+    // Pedido de plataforma delivery (Uber/Didi/Rappi… TipoServicio 4, folio K)
+    val mostrarPlataforma: Boolean = false,
+    val plataformas: List<com.example.mapicomandas.data.api.dto.PlataformaDto> = emptyList(),
     val openPayActivo: Boolean = false,
     val generandoLink: Boolean = false,
     val linkPago: String? = null            // URL a compartir cuando se genera
@@ -31,6 +34,7 @@ data class DomicilioUiState(
 class DomicilioViewModel @Inject constructor(
     private val repo: RestauranteRepository,
     private val openPay: OpenPayService,
+    private val operacion: com.example.mapicomandas.data.api.OperacionService,
     val session: SessionManager
 ) : ViewModel() {
 
@@ -141,6 +145,52 @@ class DomicilioViewModel @Inject constructor(
                 repo.guardarZonaReparto(id, nombre, cargo, activo)
                 val zonas = repo.obtenerZonasReparto()
                 _uiState.value = _uiState.value.copy(zonas = zonas, exito = "Zona guardada")
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    // ── Pedidos por plataforma delivery ─────────────────────────────────────
+    fun abrirDialogoPlataforma() {
+        viewModelScope.launch {
+            val lista = runCatching { operacion.plataformas() }.getOrDefault(emptyList())
+                .filter { it.activo }
+            _uiState.value = _uiState.value.copy(mostrarPlataforma = true, plataformas = lista)
+        }
+    }
+
+    fun cerrarDialogoPlataforma() {
+        _uiState.value = _uiState.value.copy(mostrarPlataforma = false)
+    }
+
+    /** Da de alta la plataforma en el catálogo y refresca la lista del diálogo. */
+    fun crearPlataforma(nombre: String, comisionPct: Double) {
+        viewModelScope.launch {
+            try {
+                operacion.guardarPlataforma(nombre, comisionPct)
+                val lista = runCatching { operacion.plataformas() }.getOrDefault(emptyList())
+                    .filter { it.activo }
+                _uiState.value = _uiState.value.copy(plataformas = lista, exito = "Plataforma creada")
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    /** Abre la comanda de plataforma (folio K) y navega a capturarla. */
+    fun abrirPorPlataforma(
+        idPlataforma: Int, referencia: String, cliente: String, observaciones: String,
+        onAbierta: (Int) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val r = operacion.abrirPorPlataforma(idPlataforma, referencia, cliente, observaciones)
+                _uiState.value = _uiState.value.copy(
+                    mostrarPlataforma = false, exito = "Pedido ${r.folio} abierto"
+                )
+                cargarDatos()
+                onAbierta(r.idComanda)
             } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }

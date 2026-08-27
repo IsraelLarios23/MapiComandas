@@ -39,6 +39,9 @@ data class ComandaUiState(
     val mesasTransferir: List<MesaUi> = emptyList(),
     val descuentoPreview: com.example.mapicomandas.data.api.dto.DescuentoCuentaPreviewDto? = null,
     val pideAutorizacion: Boolean = false,          // el motivo exige supervisor
+    // ── Tiempo de mesa (P4) ──
+    val relojActivo: com.example.mapicomandas.data.api.dto.RelojActivoDto? = null,
+    val cobroTiempo: com.example.mapicomandas.data.api.dto.CobroTiempoDto? = null,
     val cargando: Boolean = false,
     val error: String? = null,
     val exito: String? = null
@@ -51,6 +54,7 @@ class ComandaViewModel @Inject constructor(
     private val impresionCocina: com.example.mapicomandas.data.ImpresionCocinaService,
     private val printerService: com.example.mapicomandas.util.PrinterService,
     private val ajustes: com.example.mapicomandas.data.api.AjustesService,
+    private val operacion: com.example.mapicomandas.data.api.OperacionService,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -76,14 +80,29 @@ class ComandaViewModel @Inject constructor(
             } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(cargando = false, error = e.message)
             }
+            refrescarReloj()
         }
     }
+
+    // ── Menú por caja: ids permitidos (null = sin restricción, invariante desktop) ──
+    private var menuCats: Set<Int>? = null
+    private var menuArts: Set<Int>? = null
+
+    private fun filtrarMenu(articulos: List<Articulo>): List<Articulo> =
+        menuArts?.let { m -> articulos.filter { it.idArticulo in m } } ?: articulos
 
     private fun cargarCatalogo() {
         viewModelScope.launch {
             try {
-                val categorias = repo.obtenerCategorias()
-                val articulos = repo.obtenerArticulos()
+                // Restricción de menú de ESTA caja (fallo abierto: sin config = todo)
+                runCatching { operacion.menuCaja() }.getOrNull()?.let { menu ->
+                    menuCats = menu.categorias.map { it.idCategoria }.toSet().ifEmpty { null }
+                    menuArts = menu.articulos.map { it.idArticulo }.toSet().ifEmpty { null }
+                }
+                val categorias = repo.obtenerCategorias().let { cats ->
+                    menuCats?.let { m -> cats.filter { it.idCategoria in m } } ?: cats
+                }
+                val articulos = filtrarMenu(repo.obtenerArticulos())
                 _uiState.value = _uiState.value.copy(categorias = categorias, articulos = articulos)
                 cargarImagenes(articulos)
             } catch (e: Throwable) {
@@ -96,7 +115,7 @@ class ComandaViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(categoriaSeleccionada = idCategoria)
         viewModelScope.launch {
             try {
-                val articulos = repo.obtenerArticulos(idCategoria = idCategoria)
+                val articulos = filtrarMenu(repo.obtenerArticulos(idCategoria = idCategoria))
                 _uiState.value = _uiState.value.copy(articulos = articulos)
                 cargarImagenes(articulos)
             } catch (e: Throwable) {
@@ -110,7 +129,7 @@ class ComandaViewModel @Inject constructor(
         if (query.length >= 2) {
             viewModelScope.launch {
                 try {
-                    val articulos = repo.obtenerArticulos(nombre = query)
+                    val articulos = filtrarMenu(repo.obtenerArticulos(nombre = query))
                     _uiState.value = _uiState.value.copy(articulos = articulos)
                     cargarImagenes(articulos)
                 } catch (e: Throwable) {
@@ -673,6 +692,49 @@ class ComandaViewModel @Inject constructor(
             }
         }
     }
+
+    // ═══ Tiempo de mesa (billar/renta): reloj del servidor, cobro al detener ═══
+
+    private fun refrescarReloj() {
+        viewModelScope.launch {
+            val reloj = runCatching { operacion.tiemposActivos() }.getOrDefault(emptyList())
+                .find { it.idComanda == idComanda }
+            _uiState.value = _uiState.value.copy(relojActivo = reloj)
+        }
+    }
+
+    fun iniciarTiempo() {
+        viewModelScope.launch {
+            try {
+                val p = operacion.iniciarTiempo(idComanda)
+                _uiState.value = _uiState.value.copy(
+                    exito = "⏱ Tiempo iniciado (${p.nombreTipo.ifBlank { "tarifa de la mesa" }})"
+                )
+                refrescarReloj()
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    /** Detiene el reloj y asienta el renglón cobrable (o lo cierra sin cobro con motivo). */
+    fun detenerTiempo(motivoSinCobro: String? = null) {
+        viewModelScope.launch {
+            try {
+                val r = operacion.detenerTiempo(idComanda, motivoSinCobro)
+                if (!r.detenido) {
+                    _uiState.value = _uiState.value.copy(exito = "No había reloj corriendo", relojActivo = null)
+                    return@launch
+                }
+                _uiState.value = _uiState.value.copy(cobroTiempo = r, relojActivo = null)
+                cargarComanda()   // el renglón del tiempo ya está en la cuenta
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    fun cerrarDialogoTiempo() { _uiState.value = _uiState.value.copy(cobroTiempo = null) }
 
     /** "Terminar" del desktop: la mesa pasa a Cuenta Pedida (4) y ya no admite capturas. */
     fun marcarCuentaPedida() {

@@ -74,7 +74,8 @@ fun ComandaScreen(
                         )
                         uiState.comanda?.let { c ->
                             Text(
-                                "Mesa ${c.idMesa ?: "Sin mesa"} • ${c.numPersonas} personas",
+                                "Mesa ${c.idMesa ?: "Sin mesa"} • ${c.numPersonas} personas" +
+                                    (uiState.relojActivo?.let { "  •  ⏱ ${it.minutos} min" } ?: ""),
                                 fontSize = 12.sp
                             )
                         }
@@ -107,6 +108,20 @@ fun ComandaScreen(
                             leadingIcon = { Icon(Icons.Default.ReceiptLong, null) },
                             onClick = { menuMas = false; viewModel.marcarCuentaPedida() }
                         )
+                        Divider()
+                        if (uiState.relojActivo == null) {
+                            DropdownMenuItem(
+                                text = { Text("Iniciar tiempo de mesa") },
+                                leadingIcon = { Icon(Icons.Default.Timer, null) },
+                                onClick = { menuMas = false; viewModel.iniciarTiempo() }
+                            )
+                        } else {
+                            DropdownMenuItem(
+                                text = { Text("Detener tiempo (${uiState.relojActivo?.minutos ?: 0} min)") },
+                                leadingIcon = { Icon(Icons.Default.TimerOff, null) },
+                                onClick = { menuMas = false; viewModel.detenerTiempo() }
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -424,6 +439,31 @@ fun ComandaScreen(
             mensaje = "El motivo elegido exige autorización de un supervisor.",
             onConfirmar = { u, p -> viewModel.autorizarAccionPendiente(u, p) },
             onCancelar = { viewModel.cancelarAutorizacion() }
+        )
+    }
+
+    // Resultado del cobro de tiempo de mesa
+    uiState.cobroTiempo?.let { t ->
+        AlertDialog(
+            onDismissRequest = { viewModel.cerrarDialogoTiempo() },
+            title = { Text("Tiempo detenido") },
+            text = {
+                Column {
+                    Text("Transcurrido: ${t.minutosTranscurridos} min · cobrado: ${t.minutosCobrados} min")
+                    if (t.motivoSinCobro.isBlank()) {
+                        Text(
+                            "Importe: $${String.format(java.util.Locale.US, "%,.2f", t.importe)}" +
+                                (if (t.aplicoMinimo) "  (mínimo)" else "") +
+                                (if (t.aplicoTope) "  (tope)" else ""),
+                            fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32)
+                        )
+                        if (t.idDetalle != null) Text("El renglón ya está en la cuenta.", fontSize = 12.sp, color = Color.Gray)
+                    } else {
+                        Text("Sin cobro: ${t.motivoSinCobro}", color = Color.Gray)
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { viewModel.cerrarDialogoTiempo() }) { Text("Aceptar") } }
         )
     }
 }
