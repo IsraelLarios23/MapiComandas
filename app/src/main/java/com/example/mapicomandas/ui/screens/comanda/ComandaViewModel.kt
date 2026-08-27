@@ -118,11 +118,29 @@ class ComandaViewModel @Inject constructor(
         }
     }
 
+    // Cache de detección de kit: la API no trae esKit en el artículo, así que se
+    // consulta /articulos/{id}/kit una vez y se recuerda por id.
+    private val esKitCache = HashMap<Int, Boolean>()
+
     fun seleccionarArticuloParaAgregar(articulo: Articulo) {
-        if (articulo.esKit) {
-            cargarKitSlots(articulo)
-        } else if (articulo.idArticulo != 0) {
-            cargarModificadores(articulo)
+        if (articulo.idArticulo == 0) return
+        viewModelScope.launch {
+            try {
+                val esKit = articulo.esKit || esKitCache[articulo.idArticulo] ?: run {
+                    val slots = runCatching { repo.obtenerKitSlots(articulo.idArticulo) }
+                        .getOrDefault(emptyList())
+                    val kit = slots.isNotEmpty()
+                    esKitCache[articulo.idArticulo] = kit
+                    if (kit) {
+                        _uiState.value = _uiState.value.copy(kitSlots = slots, mostrarKitSelector = true)
+                        return@launch
+                    }
+                    false
+                }
+                if (esKit) cargarKitSlots(articulo) else cargarModificadores(articulo)
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
         }
     }
 

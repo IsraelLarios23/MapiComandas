@@ -1,6 +1,7 @@
 package com.example.mapicomandas.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.navigation.NavType
@@ -47,6 +48,21 @@ fun MapiNavGraph(sessionManager: SessionManager) {
 
     // Arranque: si la tablet no está vinculada a la API central → Vincular; si no → Login
     val startDest = if (!sessionManager.estaVinculado) Routes.VINCULAR else Routes.LOGIN
+
+    // 401 de la API en cualquier pantalla → volver a Login (sesión vencida) o a
+    // Vinculación (dispositivo revocado), según el `motivo` que manda el servidor.
+    val motivoReauth by sessionManager.reautenticar.collectAsState()
+    LaunchedEffect(motivoReauth) {
+        val motivo = motivoReauth ?: return@LaunchedEffect
+        sessionManager.limpiarReautenticacion()
+        if (motivo == "vincular") {
+            sessionManager.desvincular()
+            navController.navigate(Routes.VINCULAR) { popUpTo(0) { inclusive = true } }
+        } else {
+            sessionManager.cerrarSesionApi()
+            navController.navigate(Routes.LOGIN) { popUpTo(0) { inclusive = true } }
+        }
+    }
 
     fun irHome() {
         navController.navigate(Routes.HOME) {

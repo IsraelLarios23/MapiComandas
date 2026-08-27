@@ -97,6 +97,12 @@ fun ConfigScreen(
                 Switch(checked = uiState.fastFood, onCheckedChange = viewModel::setFastFood)
                 Spacer(Modifier.width(8.dp)); Text("Modo comida rápida (para llevar)")
             }
+            OutlinedTextField(
+                value = uiState.propinaGlobal, onValueChange = viewModel::setPropinaGlobal,
+                label = { Text("Propina sugerida (%)") }, placeholder = { Text("10") },
+                supportingText = { Text("REST_PROPINA_GLOBAL — se guarda en el negocio (API) al Guardar") },
+                singleLine = true, modifier = Modifier.fillMaxWidth()
+            )
 
             Divider(Modifier.padding(vertical = 4.dp))
 

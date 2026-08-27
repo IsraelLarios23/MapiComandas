@@ -102,7 +102,7 @@ fun CajaScreen(
                         }
                         if (!viewModel.session.cajaHabilitada) {
                             Button(
-                                onClick = { viewModel.habilitarCaja() },
+                                onClick = { viewModel.setMostrarHabilitar(true) },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                             ) {
                                 Icon(Icons.Default.LockOpen, null)
@@ -201,15 +201,74 @@ fun CajaScreen(
         )
     }
 
-    // Confirmación corte Z
+    // Habilitar caja: captura del fondo inicial (arqueo de apertura, como el desktop)
+    if (uiState.mostrarHabilitar) {
+        var fondoTxt by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { viewModel.setMostrarHabilitar(false) },
+            title = { Text("Habilitar caja") },
+            text = {
+                Column {
+                    Text("Fondo inicial en efectivo con el que abre el turno:", fontSize = 13.sp)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = fondoTxt,
+                        onValueChange = { fondoTxt = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Fondo inicial") }, prefix = { Text("$") },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = { viewModel.habilitarCaja(fondoTxt.toDoubleOrNull() ?: 0.0) }) {
+                    Text("Abrir turno")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.setMostrarHabilitar(false) }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    // Corte Z: captura del efectivo CONTADO para calcular la diferencia real
     if (uiState.mostrarCorteZ) {
+        var efectivoTxt by remember { mutableStateOf("") }
+        val esperado = uiState.resumen?.saldoFinal ?: 0.0
+        val contado = efectivoTxt.toDoubleOrNull()
         AlertDialog(
             onDismissRequest = { viewModel.setMostrarCorteZ(false) },
             title = { Text("Corte Z") },
-            text = { Text("¿Realizar corte Z? Esta acción cierra el turno de caja y no se puede deshacer.") },
+            text = {
+                Column {
+                    Text("Cierra el turno de caja (no se puede deshacer).", fontSize = 13.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Efectivo esperado: $${String.format(java.util.Locale.US, "%,.2f", esperado)}",
+                        fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = efectivoTxt,
+                        onValueChange = { efectivoTxt = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Efectivo contado") }, prefix = { Text("$") },
+                        singleLine = true
+                    )
+                    if (contado != null) {
+                        val dif = contado - esperado
+                        Text(
+                            "Diferencia: $${String.format(java.util.Locale.US, "%,.2f", dif)}",
+                            color = when {
+                                kotlin.math.abs(dif) < 0.01 -> Color(0xFF2E7D32)
+                                dif < 0 -> Color(0xFFC62828)
+                                else -> Color(0xFFF9A825)
+                            },
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            },
             confirmButton = {
                 Button(
-                    onClick = { viewModel.realizarCorteZ() },
+                    onClick = { viewModel.realizarCorteZ(contado ?: 0.0) },
+                    enabled = contado != null,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF44336))
                 ) { Text("Realizar Corte Z") }
             },

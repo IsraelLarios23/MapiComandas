@@ -20,6 +20,7 @@ data class ConfigUiState(
     val negocio: String = "",
     val impresoraTicket: String = "",
     val fastFood: Boolean = false,
+    val propinaGlobal: String = "",   // % sugerido (REST_PROPINA_GLOBAL, se guarda por API)
     // NetPay (config viaja por la API central; se edita aquí y se guarda con PUT /v1/config)
     val npBaseUrl: String = "https://api-154.api-netpay.com",
     val npOAuthPath: String = "/oauth-service/oauth/token",
@@ -75,8 +76,10 @@ class ConfigViewModel @Inject constructor(
                     npAuthString = pick("NetPayAuthString", s.npAuthString),
                     npUsername = pick("NetPayUsername", s.npUsername),
                     npPassword = pick("NetPayPassword", s.npPassword),
-                    npSerial = pick("NetPaySerialNumber", s.npSerial),
-                    npStoreId = pick("NetPayStoreId", s.npStoreId)
+                    // Serial: local del dispositivo primero; global solo de respaldo
+                    npSerial = session.netpaySerialLocal.ifBlank { pick("NetPaySerialNumber", s.npSerial) },
+                    npStoreId = pick("NetPayStoreId", s.npStoreId),
+                    propinaGlobal = configService.texto("REST_PROPINA_GLOBAL").ifBlank { s.propinaGlobal }
                 )
             }
         }
@@ -89,7 +92,19 @@ class ConfigViewModel @Inject constructor(
         val s = _uiState.value
         session.guardarApiBaseUrl(s.apiUrl.trim())
         session.guardarImpresora(s.impresoraTicket.trim())
+        // Propina sugerida global (la lee /v1/comandas/{id}/propina-sugerida en el server)
+        viewModelScope.launch {
+            runCatching {
+                if (s.propinaGlobal.isNotBlank())
+                    repo.guardarConfig("REST_PROPINA_GLOBAL", s.propinaGlobal.trim())
+                configService.refrescar()
+            }
+        }
         _uiState.value = _uiState.value.copy(guardado = true)
+    }
+
+    fun setPropinaGlobal(v: String) {
+        _uiState.value = _uiState.value.copy(propinaGlobal = v.filter { it.isDigit() || it == '.' })
     }
 
     fun desvincular() {
@@ -136,13 +151,14 @@ class ConfigViewModel @Inject constructor(
         _uiState.value = s.copy(npGuardando = true, npGuardado = false)
         viewModelScope.launch {
             val r = runCatching {
-                // La config de NetPay vive en la config del cliente y se escribe por la API (PUT /v1/config).
+                // Config compartida del negocio → API (PUT /v1/config, clave global)
                 repo.guardarConfig("NetPayBaseUrl", s.npBaseUrl.trim())
                 repo.guardarConfig("NetPayAuthString", s.npAuthString.trim())
                 repo.guardarConfig("NetPayUsername", s.npUsername.trim())
                 repo.guardarConfig("NetPayPassword", s.npPassword)
-                repo.guardarConfig("NetPaySerialNumber", s.npSerial.trim())
                 repo.guardarConfig("NetPayStoreId", s.npStoreId.trim())
+                // Serial de la terminal = POR DISPOSITIVO → local (dos tablets no se pisan)
+                session.guardarNetpaySerialLocal(s.npSerial)
                 configService.refrescar()
                 netPayService.iniciarReceptor()
             }

@@ -119,14 +119,26 @@ interface RestauranteRepository {
     suspend fun construirTicketsCocina(idComanda: Int, soloRecienEnviadas: Boolean, todasLasLineas: Boolean): TicketsCocina
 
     // ── Caja ──────────────────────────────────────────────────────────────────
-    suspend fun habilitarCaja(idCaja: Int, idUsuario: Int)
+    /** Habilita el turno de caja con su fondo inicial (arqueo de apertura). */
+    suspend fun habilitarCaja(idCaja: Int, idUsuario: Int, fondoInicial: Double = 0.0)
     suspend fun registrarMovimientoCaja(mov: MovimientoCaja): Int
     suspend fun obtenerResumenCaja(idCaja: Int, idTienda: Int): ResumenCaja
-    suspend fun realizarCorteZ(idCaja: Int, idUsuario: Int)
+    /** Corte Z con el efectivo contado (para calcular la diferencia real). */
+    suspend fun realizarCorteZ(idCaja: Int, idUsuario: Int, efectivoReal: Double = 0.0, observaciones: String = "")
 
     // ── Reportes ──────────────────────────────────────────────────────────────
     /** Reportes de un día (yyyy-MM-dd). Si es null, usa la fecha de hoy del servidor. */
     suspend fun obtenerReportesDia(fecha: String?): ReportesDia
+
+    // ── Paridad con MapiPOS desktop (vía API central) ─────────────────────────
+    /** Datos del negocio para el encabezado del ticket (GET /v1/configuracion). */
+    suspend fun obtenerEmpresaConfig(): EmpresaConfig
+    /** Resuelve un artículo por código de barras (GET /v1/articulos/codigo/{codigo}). Null si no existe. */
+    suspend fun buscarArticuloPorCodigo(codigo: String): Articulo?
+    /** Búsqueda de clientes (GET /v1/clientes?q=) para asignar cliente a la venta. */
+    suspend fun obtenerClientes(q: String): List<ClienteLite>
+    /** Imagen JPEG del artículo (binario) o null si no tiene. */
+    suspend fun obtenerImagenArticulo(idArticulo: Int): ByteArray?
 
     // ── Configuración ─────────────────────────────────────────────────────────
     suspend fun obtenerConfiguracion(idTienda: Int, idCaja: Int): List<ConfigEntry>

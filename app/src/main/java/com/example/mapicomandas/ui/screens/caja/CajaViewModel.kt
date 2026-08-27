@@ -19,7 +19,8 @@ data class CajaUiState(
     val exito: String? = null,
     val mostrarMovimiento: Boolean = false,
     val tipoMovimientoInicial: String = "I",   // "I" = ingreso, "R" = retiro
-    val mostrarCorteZ: Boolean = false
+    val mostrarCorteZ: Boolean = false,
+    val mostrarHabilitar: Boolean = false      // captura del fondo inicial
 )
 
 @HiltViewModel
@@ -47,17 +48,21 @@ class CajaViewModel @Inject constructor(
         }
     }
 
-    fun habilitarCaja() {
+    fun habilitarCaja(fondoInicial: Double = 0.0) {
         viewModelScope.launch {
             try {
-                repo.habilitarCaja(session.idCaja, session.idUsuario)
+                repo.habilitarCaja(session.idCaja, session.idUsuario, fondoInicial)
                 session.setCajaHabilitada(true)
-                _uiState.value = _uiState.value.copy(exito = "Caja habilitada")
+                _uiState.value = _uiState.value.copy(exito = "Caja habilitada", mostrarHabilitar = false)
                 cargarResumen()
             } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
+    }
+
+    fun setMostrarHabilitar(mostrar: Boolean) {
+        _uiState.value = _uiState.value.copy(mostrarHabilitar = mostrar)
     }
 
     fun registrarMovimiento(tipo: String, concepto: String, importe: Double) {
@@ -97,10 +102,10 @@ class CajaViewModel @Inject constructor(
         }
     }
 
-    fun realizarCorteZ() {
+    fun realizarCorteZ(efectivoReal: Double, observaciones: String = "") {
         viewModelScope.launch {
             try {
-                repo.realizarCorteZ(session.idCaja, session.idUsuario)
+                repo.realizarCorteZ(session.idCaja, session.idUsuario, efectivoReal, observaciones)
                 session.setCajaHabilitada(false)
                 _uiState.value = _uiState.value.copy(
                     mostrarCorteZ = false,

@@ -477,3 +477,20 @@ data class Reservacion(
     val observaciones: String,
     val status: Int
 )
+
+// ── Paridad desktop vía API ──────────────────────────────────────────────────
+/** Datos del negocio para el encabezado/pie del ticket (GET /v1/configuracion). */
+data class EmpresaConfig(
+    val empresa: String = "",
+    val rfc: String = "",
+    val telefono: String = "",
+    val encabezado: String = "",
+    val pie: String = ""
+)
+
+/** Cliente ligero para asignar a la venta (crédito / lealtad). */
+data class ClienteLite(
+    val idCliente: Int,
+    val nombre: String,
+    val rfc: String = ""
+)

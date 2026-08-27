@@ -134,6 +134,21 @@ class SessionManager @Inject constructor(
         _nombreUsuario.value = ""
     }
 
+    // ── Re-autenticación global (401 de la API en llamadas de datos) ───────────
+    // motivo: "login" = renovar sesión · "vincular" = re-emparejar. La observa el NavGraph.
+    private val _reautenticar = MutableStateFlow<String?>(null)
+    val reautenticar: StateFlow<String?> = _reautenticar
+    fun notificarReautenticacion(motivo: String) { _reautenticar.value = motivo }
+    fun limpiarReautenticacion() { _reautenticar.value = null }
+
+    // ── Serial de la terminal NetPay: dato POR DISPOSITIVO (no global del negocio).
+    // PUT /v1/config escribe la clave GLOBAL; dos tablets se pisarían el serial entre sí,
+    // así que se guarda local y la config global queda solo como fallback.
+    val netpaySerialLocal get() = prefs.getString("npSerialLocal", "") ?: ""
+    fun guardarNetpaySerialLocal(serial: String) {
+        prefs.edit().putString("npSerialLocal", serial.trim()).apply()
+    }
+
     // ── accesos ────────────────────────────────────────────────────────────────
     val idTienda get() = _sesion.value.idTienda
     val idCaja get() = _sesion.value.idCaja

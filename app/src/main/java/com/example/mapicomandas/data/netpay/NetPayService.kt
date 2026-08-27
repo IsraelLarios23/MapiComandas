@@ -26,7 +26,8 @@ import javax.inject.Singleton
 @Singleton
 class NetPayService @Inject constructor(
     private val config: ConfigService,
-    private val responseServer: NetPayResponseServer
+    private val responseServer: NetPayResponseServer,
+    private val session: com.example.mapicomandas.SessionManager
 ) {
     suspend fun obtenerConfig(): NetPayConfig {
         config.cargar()
@@ -47,7 +48,9 @@ class NetPayService @Inject constructor(
             authString = config.texto("NetPayAuthString"),
             username = config.texto("NetPayUsername"),
             password = config.texto("NetPayPassword"),
-            serialNumber = config.texto("NetPaySerialNumber"),
+            // Serial POR DISPOSITIVO (local); la clave global queda solo de respaldo,
+            // porque PUT /v1/config es global y dos tablets se pisarían el serial.
+            serialNumber = session.netpaySerialLocal.ifBlank { config.texto("NetPaySerialNumber") },
             storeId = config.texto("NetPayStoreId"),
             responsePort = config.numero("NetPayResponsePort", 8081.0).toInt().takeIf { it in 1..65535 } ?: 8081
         )

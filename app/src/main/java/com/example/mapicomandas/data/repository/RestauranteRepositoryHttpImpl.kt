@@ -70,26 +70,59 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
 
     // ── Ventas ──────────────────────────────────────────────────────────────────
     override suspend fun obtenerVentasDia(): List<VentaDia> =
+        // Shape real DocHistorialDto: {idVenta,folio,hora,cliente,total,saldoPendiente,cancelada}.
+        // OJO servidor: filtra por el usuario de la sesión (no toda la tienda).
         parse<List<VentaDiaDto>>(api.get("/v1/ventas")).map {
-            VentaDia(it.idVenta, it.folio, it.hora.ifBlank { it.fecha }, it.total, it.cancelada, it.idComanda)
+            VentaDia(it.idVenta, it.folio, it.hora, it.total, it.cancelada, null)
         }
 
     override suspend fun construirTicketVenta(idVenta: Int): List<String> {
-        // El texto/formato del ticket es local (Fase 3). Se reconstruye de GET /v1/ventas/{id}.
+        // Shape real TicketDetalleDto (líneas usan `importe`, no `total`).
         val dto = parse<VentaDetalleDto>(api.get("/v1/ventas/$idVenta"))
+        val emp = obtenerEmpresaConfig()
         val l = mutableListOf<String>()
-        l += "VENTA ${dto.folio}"
+        if (emp.empresa.isNotBlank()) l += emp.empresa.take(40)
+        if (emp.rfc.isNotBlank()) l += "RFC: ${emp.rfc}"
+        if (emp.encabezado.isNotBlank()) emp.encabezado.lines().forEach { l += it.take(40) }
+        l += "VENTA ${dto.folio}" + if (dto.cancelada) "  **CANCELADA**" else ""
         if (dto.fecha.isNotBlank()) l += dto.fecha
-        l += "-".repeat(32)
-        dto.lineas.forEach { l += "${it.cantidad.toInt()} x ${it.nombre}".take(32) + "  " + String.format("%.2f", it.total) }
-        l += "-".repeat(32)
-        l += "TOTAL: $" + String.format("%.2f", dto.total)
+        if (dto.cliente.isNotBlank()) l += "Cliente: ${dto.cliente}".take(40)
+        l += "-".repeat(40)
+        dto.lineas.forEach {
+            l += ("${it.cantidad.toInt()} x ${it.nombre}").take(30).padEnd(30) +
+                 String.format("%10.2f", it.importe)
+        }
+        l += "-".repeat(40)
+        l += "Subtotal:".padEnd(30) + String.format("%10.2f", dto.subtotal)
+        if (dto.descuento > 0) l += "Descuento:".padEnd(30) + String.format("%10.2f", -dto.descuento)
+        l += "IVA:".padEnd(30) + String.format("%10.2f", dto.iva)
+        l += "TOTAL:".padEnd(30) + String.format("%10.2f", dto.total)
+        dto.pagos.forEach { l += "  ${it.forma}:".padEnd(30) + String.format("%10.2f", it.monto) }
+        if (dto.cambio > 0) l += "Cambio:".padEnd(30) + String.format("%10.2f", dto.cambio)
+        if (emp.pie.isNotBlank()) { l += ""; emp.pie.lines().forEach { l += it.take(40) } }
         return l
     }
 
     override suspend fun cancelarVenta(idVenta: Int) {
         api.post("/v1/ventas/$idVenta/cancelar")
     }
+
+    // ── Paridad desktop vía API ────────────────────────────────────────────────
+    override suspend fun obtenerEmpresaConfig(): EmpresaConfig =
+        runCatching { parse<EmpresaConfigDto>(api.get("/v1/configuracion")) }
+            .map { EmpresaConfig(it.empresa, it.rfc, it.telefono, it.encabezado, it.pie) }
+            .getOrDefault(EmpresaConfig())
+
+    override suspend fun buscarArticuloPorCodigo(codigo: String): Articulo? =
+        runCatching { parse<ArticuloApiDto>(api.get("/v1/articulos/codigo/${enc(codigo)}")) }
+            .getOrNull()?.toArticulo()
+
+    override suspend fun obtenerClientes(q: String): List<ClienteLite> =
+        parse<List<ClienteApiDto>>(api.get("/v1/clientes?q=${enc(q)}"))
+            .map { ClienteLite(it.idCliente, it.nombre, it.rfc ?: "") }
+
+    override suspend fun obtenerImagenArticulo(idArticulo: Int): ByteArray? =
+        api.getBinary("/v1/articulos/$idArticulo/imagen")
 
     override suspend fun cancelarComanda(idComanda: Int) {
         api.post("/v1/comandas/$idComanda/cancelar")
@@ -177,8 +210,25 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
     override suspend fun obtenerDetalle(idComanda: Int): List<LineaComanda> =
         parse<ComandaDto>(api.get("/v1/comandas/$idComanda")).lineas.map { it.toLineaComanda(idComanda) }
 
-    override suspend fun obtenerComanda(idComanda: Int): MaestroComanda =
-        parse<ComandaDto>(api.get("/v1/comandas/$idComanda")).toMaestroComanda()
+    override suspend fun obtenerComanda(idComanda: Int): MaestroComanda {
+        val dto = parse<ComandaDto>(api.get("/v1/comandas/$idComanda"))
+        if (dto.idMesa != null) return dto.toMaestroComanda()
+        // Sin mesa: ComandaDto no trae tipoServicio/entrega → completarlos del hub de domicilio
+        // (arregla fast-food que nunca reabría y los datos de entrega en el cobro).
+        val sinMesa = runCatching { parse<List<ComandaSinMesaDto>>(api.get("/v1/domicilio/comandas")) }
+            .getOrDefault(emptyList()).firstOrNull { it.idComanda == idComanda }
+            ?: return dto.toMaestroComanda()
+        return dto.toMaestroComanda().copy(
+            tipoServicio = sinMesa.tipoServicio,
+            nombreCliente = sinMesa.nombreCliente,
+            telefonoCliente = sinMesa.telefonoCliente,
+            direccionEntrega = sinMesa.direccionEntrega,
+            idRepartidor = sinMesa.idRepartidor,
+            idZonaReparto = sinMesa.idZonaReparto,
+            cargoEntrega = sinMesa.cargoEntrega,
+            statusEntrega = sinMesa.statusEntrega
+        )
+    }
 
     // ── Operaciones de mesa ────────────────────────────────────────────────────
     override suspend fun cambiarMesero(idComanda: Int, idMeseroNuevo: Int) {
@@ -226,7 +276,9 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
         idCaja: Int, idAlmacen: Int, tasaIva: Double, propina: Double, pagos: List<PagoVenta>?
     ): Int {
         // Manda propina (se persiste en la venta) y NO manda IEPS/total (server calcula).
-        val listaPagos = pagos ?: listOf(PagoVenta(idFormaPago, "", 0.0))
+        // Sin pagos reales NO se cierra: un pago con monto 0 dejaría saldo=total (venta fiada).
+        val listaPagos = pagos?.takeIf { it.isNotEmpty() && it.any { p -> p.importe > 0.0 } }
+            ?: throw ApiException.Negocio(400, "No hay pagos capturados para cerrar la cuenta.")
         val body = buildJsonObject {
             putJsonArray("pagos") {
                 listaPagos.forEach { p -> addJsonObject {
@@ -306,7 +358,10 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
             Reservacion(
                 idReservacion = it.idReservacion, idMesa = it.idMesa ?: 0,
                 mesa = it.idMesa?.toString() ?: "", nombreCliente = it.nombreCliente,
-                telefono = it.telefono ?: "", fechaHora = it.fechaHora, personas = it.personas,
+                telefono = it.telefono ?: "",
+                // El server serializa ISO "yyyy-MM-ddTHH:mm:ss" → normaliza a "yyyy-MM-dd HH:mm"
+                fechaHora = it.fechaHora.replace('T', ' ').take(16),
+                personas = it.personas,
                 observaciones = it.observaciones ?: "", status = it.status
             )
         }
@@ -315,8 +370,10 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
         id: Int, idMesa: Int, nombre: String, telefono: String, fechaHora: String,
         personas: Int, observaciones: String, idUsuario: Int
     ): Int {
+        // El server enlaza FechaHora como DateTime (System.Text.Json): requiere ISO-8601 con 'T'.
+        val fhIso = fechaHora.trim().replace(' ', 'T').let { if (it.length == 16) "$it:00" else it }
         val body = buildJsonObject {
-            put("nombreCliente", nombre); put("fechaHora", fechaHora); put("personas", personas)
+            put("nombreCliente", nombre); put("fechaHora", fhIso); put("personas", personas)
             if (idMesa > 0) put("idMesa", idMesa)
             put("telefono", telefono); put("observaciones", observaciones)
             if (id > 0) put("idReservacion", id)
@@ -383,8 +440,12 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
         api.delete("/v1/puntos-impresion/$idPunto")
     }
 
-    // Las categorías se asignan en bloque dentro de guardarPuntoImpresion (POST las reemplaza).
-    override suspend fun asignarCategoriasPunto(idPunto: Int, categorias: List<Int>) { /* incluido en guardar */ }
+    override suspend fun asignarCategoriasPunto(idPunto: Int, categorias: List<Int>) {
+        // La API reemplaza categorías en el POST del punto completo: relee y re-guarda.
+        val punto = obtenerPuntosImpresion().firstOrNull { it.idPuntoImpresion == idPunto }
+            ?: throw ApiException.Negocio(404, "Punto de impresión $idPunto no encontrado.")
+        guardarPuntoImpresion(punto.copy(categorias = categorias))
+    }
 
     // ── Impresión (texto local; los datos salen de la API) ──────────────────────
     override suspend fun imprimirComanda(idComanda: Int, soloRecienEnviadas: Boolean, todasLasLineas: Boolean): List<String> {
@@ -428,12 +489,18 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
     }
 
     // ── Caja ───────────────────────────────────────────────────────────────────
-    override suspend fun habilitarCaja(idCaja: Int, idUsuario: Int) {
-        api.post("/v1/caja/habilitar", buildJsonObject { put("fondoInicial", 0.0) })
+    override suspend fun habilitarCaja(idCaja: Int, idUsuario: Int, fondoInicial: Double) {
+        api.post("/v1/caja/habilitar", buildJsonObject { put("fondoInicial", fondoInicial) })
     }
 
     override suspend fun registrarMovimientoCaja(mov: MovimientoCaja): Int {
-        val body = buildJsonObject { put("tipo", mov.tipo); put("monto", mov.importe); put("concepto", mov.concepto) }
+        // La API exige el tipo con nombre completo: "Ingreso" | "Retiro" (no "I"/"R").
+        val tipoApi = when (mov.tipo.trim().uppercase()) {
+            "I", "INGRESO" -> "Ingreso"
+            "R", "RETIRO" -> "Retiro"
+            else -> mov.tipo
+        }
+        val body = buildJsonObject { put("tipo", tipoApi); put("monto", mov.importe); put("concepto", mov.concepto) }
         api.post("/v1/caja/movimientos", body)
         return 1
     }
@@ -449,8 +516,11 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
         )
     }
 
-    override suspend fun realizarCorteZ(idCaja: Int, idUsuario: Int) {
-        api.post("/v1/caja/corte-z", buildJsonObject { put("efectivoReal", 0.0) })
+    override suspend fun realizarCorteZ(idCaja: Int, idUsuario: Int, efectivoReal: Double, observaciones: String) {
+        api.post("/v1/caja/corte-z", buildJsonObject {
+            put("efectivoReal", efectivoReal)
+            if (observaciones.isNotBlank()) put("observaciones", observaciones)
+        })
     }
 
     // ── Reportes ───────────────────────────────────────────────────────────────
@@ -539,20 +609,42 @@ class RestauranteRepositoryHttpImpl @Inject constructor(
     )
 }
 
-// DTOs de ventas (GET /v1/ventas, /v1/ventas/{id}) — shapes best-effort, tolerantes.
+// DTOs de ventas — shapes REALES verificados contra MapiPOS.Api (Historial.cs).
 @Serializable
-private data class VentaDiaDto(
-    val idVenta: Int = 0, val folio: String = "", val hora: String = "", val fecha: String = "",
-    val total: Double = 0.0, val cancelada: Boolean = false, val idComanda: Int? = null
+private data class VentaDiaDto(   // DocHistorialDto
+    val idVenta: Int = 0, val folio: String = "", val hora: String = "", val cliente: String = "",
+    val total: Double = 0.0, val saldoPendiente: Double = 0.0, val cancelada: Boolean = false
 )
 
 @Serializable
-private data class VentaDetalleDto(
-    val idVenta: Int = 0, val folio: String = "", val fecha: String = "", val total: Double = 0.0,
-    val lineas: List<VentaLineaDto> = emptyList()
+private data class VentaDetalleDto(   // TicketDetalleDto
+    val idVenta: Int = 0, val folio: String = "", val fecha: String = "", val cliente: String = "",
+    val rfc: String = "", val usuario: String = "", val subtotal: Double = 0.0,
+    val descuento: Double = 0.0, val iva: Double = 0.0, val total: Double = 0.0,
+    val pagado: Double = 0.0, val cambio: Double = 0.0, val saldoPendiente: Double = 0.0,
+    val cancelada: Boolean = false,
+    val lineas: List<VentaLineaDto> = emptyList(),
+    val pagos: List<VentaPagoDto> = emptyList()
 )
 
 @Serializable
-private data class VentaLineaDto(
-    val nombre: String = "", val cantidad: Double = 0.0, val total: Double = 0.0
+private data class VentaLineaDto(   // TicketLineaDto: el importe de línea es `importe`
+    val cantidad: Double = 0.0, val nombre: String = "",
+    val precioUnitario: Double = 0.0, val importe: Double = 0.0
+)
+
+@Serializable
+private data class VentaPagoDto(val forma: String = "", val monto: Double = 0.0)
+
+@Serializable
+private data class EmpresaConfigDto(
+    val empresa: String = "", val rfc: String = "", val telefono: String = "",
+    val encabezado: String = "", val pie: String = ""
+)
+
+@Serializable
+private data class ClienteApiDto(
+    val idCliente: Int = 0, val clave: String? = null, val nombre: String = "",
+    val rfc: String? = null, val telefono: String? = null,
+    val diasCredito: Int = 0, val limiteCredito: Double = 0.0, val saldoActual: Double = 0.0
 )
