@@ -37,6 +37,7 @@ class ComandaViewModel @Inject constructor(
     private val repo: RestauranteRepository,
     val session: SessionManager,
     private val impresionCocina: com.example.mapicomandas.data.ImpresionCocinaService,
+    private val printerService: com.example.mapicomandas.util.PrinterService,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -339,9 +340,49 @@ class ComandaViewModel @Inject constructor(
     fun imprimirComanda() {
         viewModelScope.launch {
             try {
-                // Imprime TODA la comanda en los puntos (cuenta / reimpresión)
+                // Reimpresión de cocina: /tickets-cocina solo trae PENDIENTES, así que tras
+                // enviar regresa vacío. Respaldo: comanda completa a la impresora local.
                 val resumen = impresionCocina.imprimir(idComanda, soloRecienEnviadas = false, todasLasLineas = true)
-                _uiState.value = _uiState.value.copy(exito = resumen.joinToString(" | "))
+                val nadaImpreso = resumen.isEmpty() || resumen.all { it.contains("Sin puntos", true) }
+                if (nadaImpreso) {
+                    imprimirPreCuenta(titulo = "REIMPRESIÓN COMANDA")
+                } else {
+                    _uiState.value = _uiState.value.copy(exito = resumen.joinToString(" | "))
+                }
+            } catch (e: Throwable) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    /** Pre-cuenta (papel no fiscal antes de cobrar), como "Cuenta" del desktop. */
+    fun imprimirPreCuenta(titulo: String = "CUENTA") {
+        viewModelScope.launch {
+            val impresora = session.impresoraTicket
+            if (impresora.isBlank()) {
+                _uiState.value = _uiState.value.copy(error = "Configura la impresora de tickets en Ajustes")
+                return@launch
+            }
+            try {
+                val s = _uiState.value
+                val ancho = 40
+                val l = mutableListOf<String>()
+                l += titulo
+                l += "Cuenta ${s.comanda?.folio ?: idComanda}"
+                s.comanda?.idMesa?.let { l += "Mesa $it   Personas: ${s.comanda?.numPersonas ?: 1}" }
+                l += "-".repeat(ancho)
+                s.lineas.filter { it.status != StatusLinea.CANCELADO }.forEach { ln ->
+                    l += ("${ln.cantidad.toInt()} ${ln.nombreArticulo}").take(30).padEnd(30) +
+                         String.format(java.util.Locale.US, "%10.2f", ln.total)
+                    if (ln.notas.isNotBlank()) l += "   → ${ln.notas}".take(ancho)
+                }
+                l += "-".repeat(ancho)
+                l += "TOTAL:".padEnd(30) +
+                     String.format(java.util.Locale.US, "%10.2f", s.comanda?.total ?: 0.0)
+                l += ""
+                l += "*** NO ES COMPROBANTE FISCAL ***"
+                val err = printerService.imprimir(impresora, l)
+                _uiState.value = _uiState.value.copy(exito = err ?: "Cuenta impresa")
             } catch (e: Throwable) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }

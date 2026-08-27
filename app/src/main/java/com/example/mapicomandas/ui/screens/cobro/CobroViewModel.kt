@@ -46,13 +46,29 @@ data class CobroUiState(
     val clientesEncontrados: List<com.example.mapicomandas.data.model.ClienteLite> = emptyList(),
     val buscandoCliente: Boolean = false,
     val mostrarBuscarCliente: Boolean = false,
-    // División de cuenta
+    // División de cuenta (paridad FrmDividirCuenta: iguales / por importe / por lugar;
+    // las sub-cuentas viven en memoria y al final se cierra UNA sola venta, como el desktop)
     val modoDivision: ModoDivision = ModoDivision.NINGUNO,
     val partesDivision: Int = 1,
-    val lineasDivision: Map<Int, List<LineaComanda>> = emptyMap()
+    val lineasDivision: Map<Int, List<LineaComanda>> = emptyMap(),
+    val subCuentas: List<SubCuentaUi> = emptyList(),
+    val parteSeleccionada: Int? = null,
+    val importesPersonalizados: List<Double> = emptyList()
 )
 
 enum class ModoDivision { NINGUNO, PARTES_IGUALES, POR_LUGAR, POR_IMPORTE }
+
+/** Sub-cuenta en memoria: etiqueta, total de la parte, líneas (solo por-lugar) y lo pagado. */
+data class SubCuentaUi(
+    val etiqueta: String,
+    val total: Double,
+    val idsDetalle: List<Int> = emptyList(),
+    val compartido: Double = 0.0,   // prorrateo del lugar 0 en modo por-lugar
+    val pagado: Double = 0.0
+) {
+    val restante: Double get() = (total - pagado).coerceAtLeast(0.0)
+    val cubierta: Boolean get() = restante < 0.01
+}
 
 @HiltViewModel
 class CobroViewModel @Inject constructor(
@@ -103,6 +119,7 @@ class CobroViewModel @Inject constructor(
             pagos.add(PagoVenta(formaPago.idFormaPago, formaPago.nombre, importe))
         }
         recalcularPagos(pagos)
+        registrarPagoEnParte(formaPago.idFormaPago, importe)
     }
 
     private var netPayJob: kotlinx.coroutines.Job? = null
@@ -184,6 +201,7 @@ class CobroViewModel @Inject constructor(
                 )
             )
             recalcularPagos(pagos)
+            registrarPagoEnParte(formaPago.idFormaPago, monto)
             _uiState.value = _uiState.value.copy(
                 procesandoNetPay = false,
                 mensajeNetPay = "Pago aprobado · auth ${res.authCode ?: "-"} $tarjeta".trim(),
@@ -282,6 +300,9 @@ class CobroViewModel @Inject constructor(
             pagos[idx] = pagos[idx].copy(importe = nuevoMonto)
         }
         recalcularPagos(pagos)
+        // División: el registro por parte de esa forma se rehace con el nuevo monto
+        quitarPagosDeParte(idFormaPago)
+        if (nuevoMonto > 0.0) registrarPagoEnParte(idFormaPago, nuevoMonto)
     }
 
     private fun recalcularPagos(pagos: MutableList<PagoVenta>) {
@@ -295,6 +316,7 @@ class CobroViewModel @Inject constructor(
     }
 
     fun quitarPago(idFormaPago: Int) {
+        quitarPagosDeParte(idFormaPago)
         val pagos = _uiState.value.pagos.toMutableList()
         pagos.removeAll { it.idFormaPago == idFormaPago }
         val totalPagado = pagos.sumOf { it.importe }
@@ -333,6 +355,7 @@ class CobroViewModel @Inject constructor(
             propinaIngresada = propina,
             cambio = maxOf(0.0, totalPagado - total)
         )
+        recomputarSubCuentas()
     }
 
     fun cobrar() {
@@ -457,25 +480,50 @@ class CobroViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(mensajeImpresion = null)
     }
 
+    // Registro (parteIdx, monto, idFormaPago) de cada pago aplicado a una sub-cuenta.
+    private val registroPartes = mutableListOf<Triple<Int, Double, Int>>()
+
     fun setModoDivision(modo: ModoDivision) {
-        val partes = if (modo == ModoDivision.PARTES_IGUALES)
-            _uiState.value.partesDivision.coerceAtLeast(2) else 1
-        _uiState.value = _uiState.value.copy(modoDivision = modo, partesDivision = partes)
-        if (modo == ModoDivision.POR_LUGAR) {
-            organizarPorLugar()
+        val partes = when (modo) {
+            ModoDivision.PARTES_IGUALES, ModoDivision.POR_IMPORTE ->
+                _uiState.value.partesDivision.coerceAtLeast(2)
+            else -> 1
         }
+        _uiState.value = _uiState.value.copy(
+            modoDivision = modo, partesDivision = partes, parteSeleccionada = null
+        )
+        registroPartes.clear()
+        if (modo == ModoDivision.POR_LUGAR) organizarPorLugar()
+        recomputarSubCuentas()
     }
 
     fun setPartesDivision(n: Int) {
         _uiState.value = _uiState.value.copy(partesDivision = n.coerceIn(2, 20))
+        recomputarSubCuentas()
     }
 
-    /** Total (con propina) dividido entre el nº de partes iguales. */
+    fun setImporteParte(idx: Int, monto: Double) {
+        val s = _uiState.value
+        val lista = s.importesPersonalizados.toMutableList()
+        while (lista.size < s.partesDivision) lista.add(0.0)
+        if (idx in lista.indices) lista[idx] = monto.coerceAtLeast(0.0)
+        _uiState.value = s.copy(importesPersonalizados = lista)
+        recomputarSubCuentas()
+    }
+
+    fun seleccionarParte(idx: Int?) {
+        _uiState.value = _uiState.value.copy(parteSeleccionada = idx)
+    }
+
+    /** Monto sugerido para el pago: el restante de la parte seleccionada, o el faltante global. */
     fun montoPorParte(): Double {
         val s = _uiState.value
-        val total = (s.comanda?.total ?: 0.0) + s.propinaIngresada
-        val partes = s.partesDivision.coerceAtLeast(1)
-        return if (partes > 1) total / partes else total
+        val totalConPropina = (s.comanda?.total ?: 0.0) + s.propinaIngresada
+        val parte = s.parteSeleccionada?.let { s.subCuentas.getOrNull(it) }
+        return parte?.restante ?: run {
+            val partes = s.partesDivision.coerceAtLeast(1)
+            if (partes > 1) totalConPropina / partes else totalConPropina
+        }
     }
 
     private fun organizarPorLugar() {
@@ -483,6 +531,120 @@ class CobroViewModel @Inject constructor(
             .filter { it.status != StatusLinea.CANCELADO }
             .groupBy { it.numLugar }
         _uiState.value = _uiState.value.copy(lineasDivision = agrupado)
+    }
+
+    private fun r2(v: Double) = kotlin.math.round(v * 100.0) / 100.0
+
+    /** Arma las sub-cuentas según el modo (residuos a la última, como el desktop). */
+    private fun recomputarSubCuentas() {
+        val s = _uiState.value
+        val total = r2((s.comanda?.total ?: 0.0) + s.propinaIngresada)
+        val pagadoPor = HashMap<Int, Double>()
+        registroPartes.forEach { (idx, monto, _) -> pagadoPor[idx] = (pagadoPor[idx] ?: 0.0) + monto }
+
+        val partes: List<SubCuentaUi> = when (s.modoDivision) {
+            ModoDivision.NINGUNO -> emptyList()
+
+            ModoDivision.PARTES_IGUALES -> {
+                val n = s.partesDivision.coerceAtLeast(2)
+                val base = r2(total / n)
+                (0 until n).map { i ->
+                    val monto = if (i == n - 1) r2(total - base * (n - 1)) else base
+                    SubCuentaUi("Parte ${i + 1}", monto)
+                }
+            }
+
+            ModoDivision.POR_IMPORTE -> {
+                val n = s.partesDivision.coerceAtLeast(2)
+                val base = r2(total / n)
+                val importes = (0 until n).map { i ->
+                    s.importesPersonalizados.getOrNull(i)
+                        ?: if (i == n - 1) r2(total - base * (n - 1)) else base
+                }
+                importes.mapIndexed { i, m -> SubCuentaUi("Parte ${i + 1}", r2(m)) }
+            }
+
+            ModoDivision.POR_LUGAR -> {
+                val lineas = s.lineas.filter { it.status != StatusLinea.CANCELADO }
+                val porLugar = lineas.groupBy { it.numLugar }
+                val lugares = porLugar.keys.filter { it > 0 }.sorted()
+                if (lugares.isEmpty()) {
+                    listOf(SubCuentaUi("Cuenta completa", total, lineas.map { it.idDetalleComanda }))
+                } else {
+                    // Lugar 0 = Compartido: se prorratea entre lugares (residuo al último)
+                    val compartidoTotal = r2(porLugar[0].orEmpty().sumOf { it.total })
+                    val cuota = r2(compartidoTotal / lugares.size)
+                    lugares.mapIndexed { i, lugar ->
+                        val propias = porLugar[lugar].orEmpty()
+                        val share = if (i == lugares.size - 1)
+                            r2(compartidoTotal - cuota * (lugares.size - 1)) else cuota
+                        SubCuentaUi(
+                            etiqueta = "Lugar $lugar",
+                            total = r2(propias.sumOf { it.total } + share),
+                            idsDetalle = propias.map { it.idDetalleComanda },
+                            compartido = share
+                        )
+                    }
+                }
+            }
+        }.map { it.copy() }
+
+        val conPagos = partes.mapIndexed { i, p -> p.copy(pagado = r2(pagadoPor[i] ?: 0.0)) }
+        _uiState.value = _uiState.value.copy(subCuentas = conPagos)
+    }
+
+    /** Registra un pago sobre la parte seleccionada y avanza a la siguiente sin cubrir. */
+    private fun registrarPagoEnParte(idFormaPago: Int, monto: Double) {
+        val s = _uiState.value
+        if (s.modoDivision == ModoDivision.NINGUNO) return
+        val idx = s.parteSeleccionada ?: return
+        registroPartes.add(Triple(idx, monto, idFormaPago))
+        recomputarSubCuentas()
+        // auto-avanza a la siguiente parte con restante
+        val siguiente = _uiState.value.subCuentas.withIndex()
+            .firstOrNull { !it.value.cubierta }?.index
+        _uiState.value = _uiState.value.copy(parteSeleccionada = siguiente)
+    }
+
+    private fun quitarPagosDeParte(idFormaPago: Int) {
+        if (registroPartes.removeAll { it.third == idFormaPago }) recomputarSubCuentas()
+    }
+
+    /** Imprime la sub-cuenta (papel de cortesía) de una parte. */
+    fun imprimirParte(idx: Int) {
+        val s = _uiState.value
+        val parte = s.subCuentas.getOrNull(idx) ?: return
+        val impresora = session.impresoraTicket
+        if (impresora.isBlank()) {
+            _uiState.value = s.copy(mensajeImpresion = "Configura la impresora de tickets en Ajustes")
+            return
+        }
+        viewModelScope.launch {
+            val ancho = 40
+            val l = mutableListOf<String>()
+            l += "SUB-CUENTA  ${parte.etiqueta}".take(ancho)
+            l += "Cuenta ${s.comanda?.folio ?: ""}  ·  ${fechaActual()}"
+            l += "-".repeat(ancho)
+            if (parte.idsDetalle.isNotEmpty()) {
+                s.lineas.filter { it.idDetalleComanda in parte.idsDetalle }.forEach { ln ->
+                    l += ("${ln.cantidad.toInt()} ${ln.nombreArticulo}").take(30).padEnd(30) +
+                         String.format(java.util.Locale.US, "%10.2f", ln.total)
+                }
+                if (parte.compartido > 0.01)
+                    l += "Compartido (proporcional)".padEnd(30) +
+                         String.format(java.util.Locale.US, "%10.2f", parte.compartido)
+            } else {
+                l += "Parte proporcional de la cuenta"
+            }
+            l += "-".repeat(ancho)
+            l += "TOTAL PARTE:".padEnd(30) + String.format(java.util.Locale.US, "%10.2f", parte.total)
+            l += ""
+            l += "*** NO ES COMPROBANTE FISCAL ***".take(ancho)
+            val err = printerService.imprimir(impresora, l)
+            _uiState.value = _uiState.value.copy(
+                mensajeImpresion = err ?: "Sub-cuenta ${parte.etiqueta} impresa"
+            )
+        }
     }
 
     fun limpiarError() {

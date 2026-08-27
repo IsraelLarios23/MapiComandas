@@ -1,6 +1,7 @@
 package com.example.mapicomandas.ui.screens.cobro
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -290,28 +291,30 @@ fun CobroScreen(
 
                     Spacer(Modifier.height(12.dp))
                     Divider()
-                    // ── División de cuenta ──────────────────────────────────
+                    // ── División de cuenta (iguales / por importe / por lugar) ──
                     Text("Dividir cuenta", fontWeight = FontWeight.Bold, fontSize = 14.sp,
                         modifier = Modifier.padding(top = 8.dp))
-                    val dividir = uiState.partesDivision > 1
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        FilterChip(
-                            selected = !dividir,
-                            onClick = { viewModel.setModoDivision(com.example.mapicomandas.ui.screens.cobro.ModoDivision.NINGUNO) },
-                            label = { Text("No dividir") }
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        FilterChip(
-                            selected = dividir,
-                            onClick = { viewModel.setModoDivision(com.example.mapicomandas.ui.screens.cobro.ModoDivision.PARTES_IGUALES) },
-                            label = { Text("Partes iguales") }
-                        )
+                    val modo = uiState.modoDivision
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.horizontalScroll(rememberScrollState())
+                    ) {
+                        FilterChip(selected = modo == ModoDivision.NINGUNO,
+                            onClick = { viewModel.setModoDivision(ModoDivision.NINGUNO) },
+                            label = { Text("No dividir") })
+                        FilterChip(selected = modo == ModoDivision.PARTES_IGUALES,
+                            onClick = { viewModel.setModoDivision(ModoDivision.PARTES_IGUALES) },
+                            label = { Text("Iguales") })
+                        FilterChip(selected = modo == ModoDivision.POR_IMPORTE,
+                            onClick = { viewModel.setModoDivision(ModoDivision.POR_IMPORTE) },
+                            label = { Text("Por importe") })
+                        FilterChip(selected = modo == ModoDivision.POR_LUGAR,
+                            onClick = { viewModel.setModoDivision(ModoDivision.POR_LUGAR) },
+                            label = { Text("Por lugar") })
                     }
-                    if (dividir) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(top = 4.dp)
-                        ) {
+
+                    if (modo == ModoDivision.PARTES_IGUALES || modo == ModoDivision.POR_IMPORTE) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(onClick = { viewModel.setPartesDivision(uiState.partesDivision - 1) }) {
                                 Icon(Icons.Default.Remove, "Menos partes")
                             }
@@ -319,14 +322,80 @@ fun CobroScreen(
                             IconButton(onClick = { viewModel.setPartesDivision(uiState.partesDivision + 1) }) {
                                 Icon(Icons.Default.Add, "Más partes")
                             }
-                            Spacer(Modifier.width(8.dp))
+                        }
+                    }
+
+                    if (modo != ModoDivision.NINGUNO) {
+                        // Sub-cuentas: toca una para cobrarla (el pago sugiere su restante),
+                        // edita el importe (modo por importe) e imprime su papel de cortesía.
+                        uiState.subCuentas.forEachIndexed { idx, parte ->
+                            val sel = uiState.parteSeleccionada == idx
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp)
+                            ) {
+                                FilterChip(
+                                    selected = sel,
+                                    onClick = { viewModel.seleccionarParte(if (sel) null else idx) },
+                                    label = {
+                                        Text(
+                                            (if (parte.cubierta) "✓ " else "") + parte.etiqueta +
+                                                "  $" + String.format(java.util.Locale.US, "%,.2f", parte.total) +
+                                                (if (!parte.cubierta && parte.pagado > 0)
+                                                    "  (faltan $" + String.format(java.util.Locale.US, "%,.2f", parte.restante) + ")"
+                                                 else ""),
+                                            fontSize = 12.sp
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (modo == ModoDivision.POR_IMPORTE) {
+                                    var editando by remember(idx, uiState.subCuentas.size) { mutableStateOf(false) }
+                                    IconButton(onClick = { editando = true }, modifier = Modifier.size(32.dp)) {
+                                        Icon(Icons.Default.Edit, "Editar importe", modifier = Modifier.size(16.dp))
+                                    }
+                                    if (editando) {
+                                        var txt by remember { mutableStateOf(String.format(java.util.Locale.US, "%.2f", parte.total)) }
+                                        AlertDialog(
+                                            onDismissRequest = { editando = false },
+                                            title = { Text("Importe de ${parte.etiqueta}") },
+                                            text = {
+                                                OutlinedTextField(
+                                                    value = txt,
+                                                    onValueChange = { txt = it.filter { c -> c.isDigit() || c == '.' } },
+                                                    prefix = { Text("$") }, singleLine = true
+                                                )
+                                            },
+                                            confirmButton = {
+                                                TextButton(onClick = {
+                                                    viewModel.setImporteParte(idx, txt.toDoubleOrNull() ?: parte.total)
+                                                    editando = false
+                                                }) { Text("Aceptar") }
+                                            },
+                                            dismissButton = {
+                                                TextButton(onClick = { editando = false }) { Text("Cancelar") }
+                                            }
+                                        )
+                                    }
+                                }
+                                IconButton(onClick = { viewModel.imprimirParte(idx) }, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Default.Print, "Imprimir sub-cuenta", modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                        val sumaPartes = uiState.subCuentas.sumOf { it.total }
+                        val totalDiv = (uiState.comanda?.total ?: 0.0) + uiState.propinaIngresada
+                        if (modo == ModoDivision.POR_IMPORTE &&
+                            kotlin.math.abs(sumaPartes - totalDiv) > 0.01
+                        ) {
                             Text(
-                                "$${String.format(java.util.Locale.US, "%,.2f", viewModel.montoPorParte())} c/u",
-                                color = Color(0xFF1A237E), fontWeight = FontWeight.Bold
+                                "⚠ Las partes suman $${String.format(java.util.Locale.US, "%,.2f", sumaPartes)} " +
+                                    "y la cuenta es $${String.format(java.util.Locale.US, "%,.2f", totalDiv)}",
+                                color = Color(0xFFB71C1C), fontSize = 11.sp
                             )
                         }
                         Text(
-                            "Cobra cada parte con una forma de pago; el monto sugerido será una parte.",
+                            "Selecciona una parte y cóbrala con su forma de pago; al cubrir todas se cierra UNA sola venta.",
                             fontSize = 11.sp, color = Color.Gray
                         )
                     }
@@ -458,8 +527,9 @@ fun CobroScreen(
 
                 // Diálogo para capturar el monto de la forma de pago seleccionada
                 formaSeleccionada?.let { forma ->
-                    // Con división activa, sugiere una parte (sin exceder lo que resta).
-                    val sugerido = if (uiState.partesDivision > 1)
+                    // Con división activa, sugiere el restante de la parte seleccionada
+                    // (o una parte igual), sin exceder lo que resta de la cuenta.
+                    val sugerido = if (uiState.modoDivision != ModoDivision.NINGUNO)
                         minOf(viewModel.montoPorParte(), importeRestante) else importeRestante
                     DialogoMontoPago(
                         forma = forma,

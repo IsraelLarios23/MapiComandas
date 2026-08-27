@@ -254,7 +254,7 @@ fun ComandaScreen(
                 BotonesAccionComanda(
                     tieneLineas = hayLineas,
                     onEnviarCocina = { viewModel.enviarACocina() },
-                    onImprimirCuenta = { viewModel.imprimirComanda() },
+                    onImprimirCuenta = { viewModel.imprimirPreCuenta() },
                     onDividir = { viewModel.setMostrarDividir(true) }
                 )
 
