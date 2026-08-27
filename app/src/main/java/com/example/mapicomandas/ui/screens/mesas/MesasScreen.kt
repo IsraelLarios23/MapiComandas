@@ -55,10 +55,12 @@ fun MesasScreen(
 
     Scaffold(
         topBar = {
+            val vistaCompacta = com.example.mapicomandas.ui.util.rememberVistaCompacta(viewModel.session)
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Plano de Mesas", fontWeight = FontWeight.Bold)
+                        Text(if (vistaCompacta) "Mesas" else "Plano de Mesas",
+                            fontWeight = FontWeight.Bold, maxLines = 1)
                         if (uiState.platillosListos > 0) {
                             Spacer(Modifier.width(10.dp))
                             Badge(containerColor = Color(0xFF4CAF50)) {
@@ -81,13 +83,13 @@ fun MesasScreen(
                     IconButton(onClick = { viewModel.refrescarMesas() }) {
                         Icon(Icons.Default.Refresh, "Refrescar")
                     }
-                    IconButton(onClick = onIrAKds) {
+                    if (!vistaCompacta) IconButton(onClick = onIrAKds) {
                         Icon(Icons.Default.Kitchen, "Monitor Cocina")
                     }
-                    IconButton(onClick = onIrADomicilio) {
+                    if (!vistaCompacta) IconButton(onClick = onIrADomicilio) {
                         Icon(Icons.Default.DeliveryDining, "Domicilio")
                     }
-                    IconButton(onClick = onIrACaja) {
+                    if (!vistaCompacta) IconButton(onClick = onIrACaja) {
                         Icon(Icons.Default.PointOfSale, "Caja")
                     }
                 },
@@ -134,6 +136,15 @@ fun MesasScreen(
             if (uiState.cargando) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
+                }
+            } else if (uiState.mesas.isEmpty()) {
+                Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                    Text(
+                        "No hay mesas dadas de alta" +
+                            (uiState.zonaSeleccionada?.let { " en la zona \"$it\"" } ?: "") +
+                            ".\nSe administran desde MapiPOS (o pide que te arme la consola aquí).",
+                        color = Color.Gray, textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
                 }
             } else {
                 // Plano de mesas (escala proporcional a la pantalla)
