@@ -21,6 +21,13 @@ data class ConfigUiState(
     val impresoraTicket: String = "",
     val fastFood: Boolean = false,
     val modoVista: String = "auto",   // auto | telefono | tableta
+    // Módulos que usa el negocio (REST_MOD_*, config global de la API)
+    val modDomicilio: Boolean = true,
+    val modReservaciones: Boolean = true,
+    val modDisponibilidad: Boolean = true,
+    val modMermas: Boolean = true,
+    val modMonederos: Boolean = false,
+    val modHabitaciones: Boolean = false,
     val propinaGlobal: String = "",   // % sugerido (REST_PROPINA_GLOBAL, se guarda por API)
     // NetPay (config viaja por la API central; se edita aquí y se guarda con PUT /v1/config)
     val npBaseUrl: String = "https://api-154.api-netpay.com",
@@ -81,7 +88,13 @@ class ConfigViewModel @Inject constructor(
                     // Serial: local del dispositivo primero; global solo de respaldo
                     npSerial = session.netpaySerialLocal.ifBlank { pick("NetPaySerialNumber", s.npSerial) },
                     npStoreId = pick("NetPayStoreId", s.npStoreId),
-                    propinaGlobal = configService.texto("REST_PROPINA_GLOBAL").ifBlank { s.propinaGlobal }
+                    propinaGlobal = configService.texto("REST_PROPINA_GLOBAL").ifBlank { s.propinaGlobal },
+                    modDomicilio = configService.bool("REST_MOD_DOMICILIO", true),
+                    modReservaciones = configService.bool("REST_MOD_RESERVACIONES", true),
+                    modDisponibilidad = configService.bool("REST_MOD_DISPONIBILIDAD", true),
+                    modMermas = configService.bool("REST_MOD_MERMAS", true),
+                    modMonederos = configService.bool("REST_MOD_MONEDEROS", false),
+                    modHabitaciones = configService.bool("REST_MOD_HABITACIONES", false)
                 )
             }
         }
@@ -126,6 +139,25 @@ class ConfigViewModel @Inject constructor(
     fun setModoVista(v: String) {
         _uiState.value = _uiState.value.copy(modoVista = v)
         session.setModoVista(v)
+    }
+
+    /** Activa/desactiva un módulo del negocio (REST_MOD_*, se guarda en la API al momento). */
+    fun setModulo(clave: String, valor: Boolean) {
+        _uiState.value = when (clave) {
+            "REST_MOD_DOMICILIO" -> _uiState.value.copy(modDomicilio = valor)
+            "REST_MOD_RESERVACIONES" -> _uiState.value.copy(modReservaciones = valor)
+            "REST_MOD_DISPONIBILIDAD" -> _uiState.value.copy(modDisponibilidad = valor)
+            "REST_MOD_MERMAS" -> _uiState.value.copy(modMermas = valor)
+            "REST_MOD_MONEDEROS" -> _uiState.value.copy(modMonederos = valor)
+            "REST_MOD_HABITACIONES" -> _uiState.value.copy(modHabitaciones = valor)
+            else -> _uiState.value
+        }
+        viewModelScope.launch {
+            runCatching {
+                repo.guardarConfig(clave, if (valor) "TRUE" else "FALSE")
+                configService.refrescar()
+            }.onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+        }
     }
 
     // ── NetPay ──────────────────────────────────────────────────────────────────

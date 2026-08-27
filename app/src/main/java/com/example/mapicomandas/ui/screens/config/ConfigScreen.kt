@@ -97,6 +97,25 @@ fun ConfigScreen(
                 Switch(checked = uiState.fastFood, onCheckedChange = viewModel::setFastFood)
                 Spacer(Modifier.width(8.dp)); Text("Modo comida rápida (para llevar)")
             }
+            Text("Módulos del restaurante", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text("Apaga lo que este negocio no ocupa; los botones desaparecen del menú de inicio.",
+                fontSize = 11.sp, color = Color.Gray)
+            @Composable
+            fun FilaModulo(nombre: String, clave: String, valor: Boolean) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(checked = valor, onCheckedChange = { viewModel.setModulo(clave, it) })
+                    Spacer(Modifier.width(8.dp)); Text(nombre, fontSize = 14.sp)
+                }
+            }
+            FilaModulo("Domicilio / Para llevar", "REST_MOD_DOMICILIO", uiState.modDomicilio)
+            FilaModulo("Reservaciones", "REST_MOD_RESERVACIONES", uiState.modReservaciones)
+            FilaModulo("Disponibilidad de platillos", "REST_MOD_DISPONIBILIDAD", uiState.modDisponibilidad)
+            FilaModulo("Mermas", "REST_MOD_MERMAS", uiState.modMermas)
+            FilaModulo("Monederos de lealtad", "REST_MOD_MONEDEROS", uiState.modMonederos)
+            FilaModulo("Habitaciones (hotel)", "REST_MOD_HABITACIONES", uiState.modHabitaciones)
+
+            Divider(Modifier.padding(vertical = 4.dp))
+
             Text("Vista de la app", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = uiState.modoVista == "auto",

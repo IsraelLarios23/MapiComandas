@@ -48,21 +48,39 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val nombreUsuario by viewModel.session.nombreUsuario.collectAsState()
+    val modulos by viewModel.modulos.collectAsState()
 
-    val funciones = listOf(
+    // Al volver al Home se relee la config (por si activaron/desactivaron módulos en Ajustes)
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) viewModel.recargarModulos()
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+
+    // Los módulos opcionales solo aparecen si el negocio los usa (REST_MOD_* en Ajustes)
+    val funciones = listOfNotNull(
         FuncionHome("Mesas", Icons.Default.TableRestaurant, Color(0xFF4CAF50), onIrAMesas),
         FuncionHome("Cocina (KDS)", Icons.Default.Kitchen, Color(0xFF1A237E), onIrAKds),
-        FuncionHome("Domicilio /\nPara Llevar", Icons.Default.DeliveryDining, Color(0xFF0277BD), onIrADomicilio),
+        FuncionHome("Domicilio /\nPara Llevar", Icons.Default.DeliveryDining, Color(0xFF0277BD), onIrADomicilio)
+            .takeIf { modulos.domicilio },
         FuncionHome("Caja", Icons.Default.PointOfSale, Color(0xFF37474F), onIrACaja),
         FuncionHome("Pagos en caja", Icons.Default.Payments, Color(0xFF2E7D32), onIrAPendientes),
         FuncionHome("Turno", Icons.Default.Schedule, Color(0xFFC62828), onIrATurno),
-        FuncionHome("Disponibilidad", Icons.Default.Inventory, Color(0xFF827717), onIrADisponibilidad),
-        FuncionHome("Mermas", Icons.Default.DeleteSweep, Color(0xFFB71C1C), onIrAMermas),
-        FuncionHome("Monederos", Icons.Default.CardMembership, Color(0xFF6A1B9A), onIrAMonederos),
-        FuncionHome("Habitaciones", Icons.Default.Hotel, Color(0xFF00695C), onIrAHabitaciones),
+        FuncionHome("Disponibilidad", Icons.Default.Inventory, Color(0xFF827717), onIrADisponibilidad)
+            .takeIf { modulos.disponibilidad },
+        FuncionHome("Mermas", Icons.Default.DeleteSweep, Color(0xFFB71C1C), onIrAMermas)
+            .takeIf { modulos.mermas },
+        FuncionHome("Monederos", Icons.Default.CardMembership, Color(0xFF6A1B9A), onIrAMonederos)
+            .takeIf { modulos.monederos },
+        FuncionHome("Habitaciones", Icons.Default.Hotel, Color(0xFF00695C), onIrAHabitaciones)
+            .takeIf { modulos.habitaciones },
         FuncionHome("Ventas del día", Icons.Default.ReceiptLong, Color(0xFF455A64), onIrAVentas),
         FuncionHome("Reportes", Icons.Default.BarChart, Color(0xFF00838F), onIrAReportes),
-        FuncionHome("Reservaciones", Icons.Default.EventAvailable, Color(0xFF6A1B9A), onIrAReservaciones),
+        FuncionHome("Reservaciones", Icons.Default.EventAvailable, Color(0xFF6A1B9A), onIrAReservaciones)
+            .takeIf { modulos.reservaciones },
         FuncionHome("Puntos de\nImpresión", Icons.Default.Print, Color(0xFF00695C), onIrAPuntosImpresion),
         FuncionHome("Configuración", Icons.Default.Settings, Color(0xFF6A1B9A), onIrASettings),
     )
@@ -102,32 +120,77 @@ fun HomeScreen(
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Medium
             )
-            // Rejilla de 2 columnas con filas de peso igual → todos los botones caben sin scroll
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                funciones.chunked(2).forEach { fila ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        fila.forEach { f ->
-                            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                                BotonFuncion(f)
+            val vistaCompacta = com.example.mapicomandas.ui.util.rememberVistaCompacta(viewModel.session)
+            if (vistaCompacta) {
+                // Teléfono: rejilla de 3 columnas con scroll y celdas de alto fijo,
+                // para que la etiqueta de cada botón SIEMPRE sea visible.
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    modifier = Modifier.fillMaxSize().padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(funciones) { f -> BotonFuncionCompacto(f) }
+                }
+            } else {
+                // Tableta: rejilla de 2 columnas con filas de peso igual → todo cabe sin scroll
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    funciones.chunked(2).forEach { fila ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            fila.forEach { f ->
+                                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                                    BotonFuncion(f)
+                                }
                             }
+                            // Rellena si la fila tiene 1 solo elemento (impar)
+                            if (fila.size == 1) Spacer(modifier = Modifier.weight(1f))
                         }
-                        // Rellena si la fila tiene 1 solo elemento (impar)
-                        if (fila.size == 1) Spacer(modifier = Modifier.weight(1f))
                     }
                 }
             }
         }
       }
+    }
+}
+
+/** Botón para teléfono: alto fijo, ícono arriba y etiqueta SIEMPRE visible abajo. */
+@Composable
+fun BotonFuncionCompacto(funcion: FuncionHome) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(104.dp)
+            .clickable(onClick = funcion.accion),
+        colors = CardDefaults.cardColors(containerColor = funcion.color),
+        elevation = CardDefaults.cardElevation(3.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(funcion.icono, null, tint = Color.White, modifier = Modifier.size(32.dp))
+            Spacer(Modifier.height(6.dp))
+            Text(
+                funcion.titulo.replace("\n", " "),
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                lineHeight = 13.sp,
+                maxLines = 2,
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
 
